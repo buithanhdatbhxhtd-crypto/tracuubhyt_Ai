@@ -228,7 +228,14 @@ def render_search_manual(cols):
         default = [c for c in cols if any(x in c for x in ['ten', 'sinh', 'ma', 'so'])]
         selected = st.multiselect("Cột:", cols, default=default or cols[:3])
     
-    inputs = {col: st.columns(len(selected))[i].text_input(f"Nhập {col}") for i, col in enumerate(selected)} if selected else {}
+    # FIX LỖI BẬC THANG Ở ĐÂY
+    inputs = {}
+    if selected:
+        # Tạo danh sách cột trên giao diện 1 lần duy nhất
+        ui_cols = st.columns(len(selected))
+        for i, col_name in enumerate(selected):
+            # Gán mỗi input vào đúng cột của nó
+            inputs[col_name] = ui_cols[i].text_input(f"Nhập {col_name}")
     
     if st.button("🔍 Tìm kiếm", type="primary"):
         df = search_data('manual', inputs)
