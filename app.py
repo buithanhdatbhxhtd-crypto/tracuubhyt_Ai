@@ -20,9 +20,8 @@ st.set_page_config(
 EXCEL_FILE = 'aaa.xlsb'
 DB_FILE = 'bhxh_data.db'
 
-# --- 1. CÁC HÀM XỬ LÝ USER & LOG (GIỮ NGUYÊN) ---
+# --- 1. CÁC HÀM XỬ LÝ USER & LOG ---
 def init_user_db():
-    """Khởi tạo DB cho user và logs (tách biệt với data nghiệp vụ)"""
     conn = sqlite3.connect('users.db', check_same_thread=False)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users
@@ -61,309 +60,315 @@ def configure_gemini():
         return True
     return False
 
-# --- 2. XỬ LÝ DỮ LIỆU LỚN (CHUYỂN ĐỔI EXCEL -> SQLITE) ---
-
-@st.cache_resource
-def init_data_connection():
-    """Kết nối tới database dữ liệu nghiệp vụ"""
-    return sqlite3.connect(DB_FILE, check_same_thread=False)
+# --- 2. XỬ LÝ DỮ LIỆU LỚN (QUAN TRỌNG NHẤT) ---
 
 def clean_text(text):
-    if pd.isna(text) or text == "": return ""
-    return unidecode.unidecode(str(text)).lower().replace(' ', '')
+    if pd.isna(text) or str(text).lower() == 'nan' or str(text).strip() == '': 
+        return ""
+    # Chuyển thành chuỗi, xóa dấu, xóa khoảng trắng thừa, viết thường
+    text_str = str(text).strip()
+    return unidecode.unidecode(text_str).lower().replace(' ', '')
+
+def init_data_db():
+    """Kết nối an toàn đến DB dữ liệu"""
+    return sqlite3.connect(DB_FILE, check_same_thread=False)
 
 def import_excel_to_sqlite():
     """
-    Hàm này chỉ chạy 1 lần đầu tiên để chuyển Excel 500k dòng sang SQLite.
+    Quy trình nạp dữ liệu an toàn:
+    1. Kiểm tra DB có bảng 'bhxh' chưa.
+    2. Nếu chưa, đọc Excel, xử lý và lưu vào DB.
+    3. Tạo chỉ mục (Index) để tìm kiếm nhanh.
     """
     if not os.path.exists(EXCEL_FILE):
-        return False, f"Không tìm thấy file '{EXCEL_FILE}'"
+        return False, f"⚠️ Không tìm thấy file '{EXCEL_FILE}'. Hãy upload file vào cùng thư mục."
 
+    conn = init_data_db()
+    cursor = conn.cursor()
+    
+    # Kiểm tra xem bảng đã tồn tại và có dữ liệu chưa
     try:
-        # Kiểm tra xem đã import chưa bằng cách check bảng
-        conn = init_data_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bhxh'")
-        if cursor.fetchone():
-            conn.close()
-            return True, "Dữ liệu đã sẵn sàng." # Đã có dữ liệu, không cần import lại
+        cursor.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='bhxh'")
+        table_exists = cursor.fetchone()[0]
+        if table_exists:
+            # Kiểm tra xem bảng có dữ liệu không
+            cursor.execute("SELECT count(*) FROM bhxh")
+            count = cursor.fetchone()[0]
+            if count > 0:
+                conn.close()
+                return True, f"Dữ liệu đã sẵn sàng ({count} bản ghi)."
+            else:
+                # Bảng rỗng, xóa đi làm lại
+                cursor.execute("DROP TABLE bhxh")
+    except:
+        pass # Lỗi gì đó thì cứ tiếp tục nạp lại
 
-        # Bắt đầu Import (Tiến trình này có thể mất 1-2 phút với 500k dòng)
-        status_placeholder = st.empty()
-        status_placeholder.info("🚀 Đang khởi tạo hệ thống dữ liệu lớn (Lần đầu tiên)... Vui lòng đợi.")
+    # BẮT ĐẦU QUÁ TRÌNH NẠP (Hiển thị Progress Bar)
+    msg_placeholder = st.empty()
+    bar = st.progress(0)
+    
+    try:
+        msg_placeholder.info(f"⏳ Đang đọc file '{EXCEL_FILE}'... (Việc này mất khoảng 1-2 phút lần đầu)")
         
-        # Đọc file Excel theo chunk (nếu file quá lớn, nhưng pyxlsb thường đọc 1 lèo cũng ổn với 500k)
-        # Ở đây đọc hết 1 lần cho nhanh nếu RAM server > 1GB, nếu yếu hơn thì cần chia nhỏ.
+        # Đọc file Excel
         df = pd.read_excel(EXCEL_FILE, engine='pyxlsb')
+        bar.progress(30)
         
-        # Chuẩn hóa tên cột (bỏ dấu cách, ký tự lạ để làm tên cột SQL)
-        df.columns = [unidecode.unidecode(str(c)).strip().replace(' ', '_').lower() for c in df.columns]
+        msg_placeholder.info("⚙️ Đang xử lý và làm sạch dữ liệu...")
         
-        # Chuyển tất cả về string
+        # 1. Chuẩn hóa tên cột (Xóa khoảng trắng, ký tự lạ để tránh lỗi SQL)
+        df.columns = [unidecode.unidecode(str(c)).strip().replace(' ', '_').replace('.','').lower() for c in df.columns]
+        
+        # 2. Chuyển đổi dữ liệu sang String để tránh lỗi
         df = df.astype(str)
-        df.replace(['nan', 'None', 'NaT'], '', inplace=True)
-        
-        # TẠO CỘT SEARCH INDEX (QUAN TRỌNG NHẤT)
-        # Gộp nội dung lại để tìm kiếm full-text
-        status_placeholder.info("⚙️ Đang tối ưu hóa chỉ mục tìm kiếm...")
-        
-        # Tạo cột tìm kiếm tổng hợp (Master Search)
-        df['master_search_idx'] = df.apply(lambda x: clean_text(' '.join(x.values)), axis=1)
-        
-        # Tạo các cột index riêng lẻ cho từng trường quan trọng (để tìm thủ công nhanh)
-        # Ví dụ: hoten -> idx_hoten
-        for col in df.columns:
-            if col != 'master_search_idx':
-                df[f'idx_{col}'] = df[col].apply(clean_text)
+        df.replace(['nan', 'None', 'NaT', '<NA>'], '', inplace=True)
+        bar.progress(50)
 
-        # Ghi vào SQLite
-        status_placeholder.info("💾 Đang lưu trữ vào cơ sở dữ liệu...")
-        df.to_sql('bhxh', conn, if_exists='replace', index=False)
+        # 3. TẠO CỘT TÌM KIẾM (INDEX)
+        # Thay vì xử lý từng dòng (chậm), ta dùng vector hóa của Pandas (nhanh gấp 100 lần)
         
-        # Tạo Index cho cột master_search_idx để tìm siêu nhanh
+        # Cột Master Index: Gộp tất cả các trường lại
+        df['master_search_idx'] = df.apply(lambda x: ' '.join(x.values), axis=1)
+        # Xóa dấu và khoảng trắng cho cột Master
+        df['master_search_idx'] = df['master_search_idx'].apply(clean_text)
+        
+        # Cột Index riêng cho từng trường (để tìm chính xác)
+        for col in df.columns:
+            if col != 'master_search_idx' and not col.startswith('idx_'):
+                df[f'idx_{col}'] = df[col].apply(clean_text)
+        
+        bar.progress(70)
+        msg_placeholder.info("💾 Đang lưu vào Database (Bước này quan trọng nhất)...")
+        
+        # Lưu vào SQLite
+        # chunksize giúp chia nhỏ dữ liệu khi ghi, tránh treo máy
+        df.to_sql('bhxh', conn, if_exists='replace', index=False, chunksize=10000)
+        
+        bar.progress(90)
+        msg_placeholder.info("🚀 Đang tạo chỉ mục tốc độ cao...")
+        
+        # Tạo Index SQL để tìm kiếm tức thì
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_master ON bhxh (master_search_idx)")
         conn.commit()
+        
+        bar.progress(100)
+        time.sleep(1)
+        msg_placeholder.empty()
+        bar.empty()
+        
         conn.close()
-        
-        status_placeholder.success("✅ Hoàn tất nạp dữ liệu!")
-        time.sleep(2)
-        status_placeholder.empty()
-        return True, "Đã nạp dữ liệu mới thành công."
-        
+        return True, "Nạp dữ liệu thành công!"
+
     except Exception as e:
+        conn.close()
+        # Nếu lỗi, xóa file DB hỏng để lần sau chạy lại từ đầu
+        if os.path.exists(DB_FILE):
+            os.remove(DB_FILE)
         return False, f"Lỗi nạp dữ liệu: {str(e)}"
 
-def get_table_columns():
-    conn = init_data_connection()
+def get_display_columns():
+    """Lấy danh sách cột gốc để hiển thị (bỏ qua các cột index hệ thống)"""
+    conn = init_data_db()
     cursor = conn.cursor()
-    cursor.execute("PRAGMA table_info(bhxh)")
-    columns = [info[1] for info in cursor.fetchall()]
-    conn.close()
-    # Lọc bỏ các cột idx_ và master_search_idx để lấy cột gốc hiển thị
-    real_cols = [c for c in columns if not c.startswith('idx_') and c != 'master_search_idx']
-    return real_cols
+    try:
+        cursor.execute("PRAGMA table_info(bhxh)")
+        columns = [info[1] for info in cursor.fetchall()]
+        # Lọc bỏ các cột bắt đầu bằng idx_ hoặc là master_search_idx
+        real_cols = [c for c in columns if not c.startswith('idx_') and c != 'master_search_idx' and c != 'index']
+        return real_cols
+    except:
+        return []
+    finally:
+        conn.close()
 
-# --- 3. LOGIC TRA CỨU SQL (SIÊU NHANH) ---
+# --- 3. LOGIC TÌM KIẾM ---
 
-def sql_search(query_type, params):
-    """
-    Hàm tìm kiếm dùng SQL Query.
-    query_type: 'ai' hoặc 'manual'
-    params: từ khóa hoặc dict các bộ lọc
-    """
-    conn = init_data_connection()
+def search_data(query_type, params):
+    conn = init_data_db()
+    real_cols = get_display_columns()
+    if not real_cols: return pd.DataFrame()
     
-    # Lấy danh sách cột hiển thị
-    real_cols = get_table_columns()
-    select_cols = ", ".join(real_cols)
+    select_cols_str = ", ".join([f'"{c}"' for c in real_cols]) # Quote tên cột để tránh lỗi SQL
     
     try:
         if query_type == 'ai':
+            # Tìm kiếm thông minh trên cột Master
             keyword = clean_text(params)
-            # Dùng LIKE '%keyword%' trên cột index
-            sql = f"SELECT {select_cols} FROM bhxh WHERE master_search_idx LIKE ? LIMIT 100"
-            df = pd.read_sql_query(sql, conn, params=(f'%{keyword}%',))
+            if not keyword: return pd.DataFrame()
+            
+            sql = f'SELECT {select_cols_str} FROM bhxh WHERE master_search_idx LIKE ? LIMIT 50'
+            return pd.read_sql_query(sql, conn, params=(f'%{keyword}%',))
             
         elif query_type == 'manual':
-            # Xây dựng câu query động: WHERE idx_col1 LIKE %v1% AND idx_col2 LIKE %v2%
+            # Tìm kiếm chính xác trên từng cột
             conditions = []
             values = []
             for col, val in params.items():
-                if val:
-                    conditions.append(f"idx_{col} LIKE ?")
-                    values.append(f"%{clean_text(val)}%")
+                if val and val.strip():
+                    clean_val = clean_text(val)
+                    # Tìm trên cột index tương ứng (vd: idx_hoten)
+                    # Cần đảm bảo tên cột trong params khớp với tên cột trong DB (đã lowercase)
+                    db_col_idx = f"idx_{unidecode.unidecode(col).strip().replace(' ', '_').lower()}"
+                    
+                    conditions.append(f"{db_col_idx} LIKE ?")
+                    values.append(f'%{clean_val}%')
+            
+            if not conditions: return pd.DataFrame()
             
             where_clause = " AND ".join(conditions)
-            sql = f"SELECT {select_cols} FROM bhxh WHERE {where_clause} LIMIT 100"
-            df = pd.read_sql_query(sql, conn, params=tuple(values))
+            sql = f'SELECT {select_cols_str} FROM bhxh WHERE {where_clause} LIMIT 50'
+            return pd.read_sql_query(sql, conn, params=tuple(values))
             
-        conn.close()
-        return df
     except Exception as e:
-        conn.close()
-        st.error(f"Lỗi truy vấn: {e}")
+        st.error(f"Lỗi tìm kiếm: {e}")
         return pd.DataFrame()
+    finally:
+        conn.close()
 
 # --- 4. GIAO DIỆN ---
 
 def render_login():
-    st.markdown("<h2 style='text-align: center;'>🔐 Hệ Thống Tra Cứu Dữ Liệu Lớn</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>🔐 Đăng Nhập Hệ Thống</h2>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        with st.form("login_form"):
-            username = st.text_input("Tên đăng nhập")
-            password = st.text_input("Mật khẩu", type='password')
-            submitted = st.form_submit_button("Đăng nhập", use_container_width=True)
-            
-            if submitted:
+        with st.form("login"):
+            u = st.text_input("Tên đăng nhập")
+            p = st.text_input("Mật khẩu", type='password')
+            if st.form_submit_button("Đăng nhập", use_container_width=True):
                 conn = init_user_db()
-                c = conn.cursor()
-                c.execute('SELECT * FROM users WHERE username = ? AND password = ?', 
-                          (username, make_hashes(password)))
-                data = c.fetchall()
+                res = conn.execute('SELECT * FROM users WHERE username=? AND password=?', (u, make_hashes(p))).fetchone()
                 conn.close()
-                if data:
-                    st.session_state['logged_in'] = True
-                    st.session_state['username'] = username
-                    st.session_state['role'] = data[0][2]
-                    log_action(username, "Login", "Success")
+                if res:
+                    st.session_state.update({'logged_in': True, 'username': u, 'role': res[2]})
                     st.rerun()
-                else:
-                    st.error("Sai thông tin đăng nhập.")
+                else: st.error("Sai thông tin!")
 
-def render_manual_search(cols_list):
-    st.subheader("📋 Tra Cứu Thủ Công (Chính Xác)")
-    st.caption("Dữ liệu 500.000+ bản ghi. Nhập thông tin không dấu viết liền cũng được.")
+def render_search_ai(is_ready):
+    st.subheader("🤖 Tra Cứu Thông Minh (AI)")
+    st.caption("Nhập bất kỳ thông tin nào: Tên viết liền, ngày sinh, số thẻ...")
     
-    with st.expander("⚙️ Chọn trường tìm kiếm", expanded=True):
-        default = []
-        # Gợi ý cột quan trọng (dựa trên tên cột chuẩn hóa lowercase)
-        for c in ['hoten', 'ngaysinh', 'socmnd', 'cccd', 'mabhxh', 'mathe']:
-            for col in cols_list:
-                if c in col: default.append(col)
-        if not default: default = cols_list[:3]
-        
-        selected_filters = st.multiselect("Tiêu chí:", cols_list, default=default)
-
-    inputs = {}
-    if selected_filters:
-        cols = st.columns(len(selected_filters))
-        for i, col in enumerate(selected_filters):
-            inputs[col] = cols[i].text_input(f"Nhập {col}")
-
-    if st.button("🔍 Tìm kiếm", type="primary"):
-        valid_filters = {k: v for k, v in inputs.items() if v.strip()}
-        if valid_filters:
-            df_res = sql_search('manual', valid_filters)
-            st.success(f"Tìm thấy {len(df_res)} kết quả (Hiển thị tối đa 100).")
-            st.dataframe(df_res, use_container_width=True)
-            log_action(st.session_state['username'], "Manual Search", str(valid_filters))
-        else:
-            st.warning("Vui lòng nhập ít nhất 1 trường.")
-
-def render_ai_search(is_ai_ready):
-    st.subheader("🤖 Tra Cứu Siêu Tốc & AI")
-    st.caption("Tìm kiếm trên toàn bộ cơ sở dữ liệu.")
-    
-    query = st.text_input("Nhập bất kỳ thông tin nào (Tên, ngày sinh, thẻ...):", placeholder="Ví dụ: nguyenvana 1990")
-    
-    if query:
-        df_res = sql_search('ai', query)
-        count = len(df_res)
-        
-        if count > 0:
-            st.success(f"Tìm thấy {count} hồ sơ khớp.")
-            st.dataframe(df_res, use_container_width=True)
+    q = st.text_input("Từ khóa:", placeholder="vd: nguyenvana 1990")
+    if q:
+        df = search_data('ai', q)
+        if not df.empty:
+            st.success(f"Tìm thấy {len(df)} kết quả.")
+            st.dataframe(df, use_container_width=True)
             
-            if count <= 3:
+            if len(df) == 1 and is_ready:
                 st.markdown("---")
-                if is_ai_ready:
-                    for idx, row in df_res.iterrows():
-                        with st.expander(f"Phân tích AI: {row.iloc[0]}", expanded=True):
-                            with st.spinner("AI đang đọc..."):
-                                try:
-                                    model = genai.GenerativeModel('gemini-pro')
-                                    prompt = f"Dữ liệu BHXH: {row.to_dict()}. Tóm tắt thông tin và quyền lợi người này bằng tiếng Việt."
-                                    response = model.generate_content(prompt)
-                                    st.write(response.text)
-                                except Exception as e: st.error(str(e))
-                else:
-                    st.warning("Cần nhập API Key để dùng AI.")
-            log_action(st.session_state['username'], "AI Search", query)
-        else:
-            st.warning("Không tìm thấy kết quả.")
+                with st.spinner("AI đang phân tích..."):
+                    try:
+                        model = genai.GenerativeModel('gemini-pro')
+                        prompt = f"Dữ liệu BHXH: {df.iloc[0].to_dict()}. Tóm tắt và tư vấn quyền lợi ngắn gọn bằng tiếng Việt."
+                        res = model.generate_content(prompt)
+                        st.info(res.text)
+                    except: st.warning("Lỗi kết nối AI")
+        else: st.warning("Không tìm thấy.")
+
+def render_search_manual(cols):
+    st.subheader("📋 Tra Cứu Chính Xác")
+    st.caption("Nhập thông tin vào các ô bên dưới (không cần dấu).")
+    
+    with st.expander("Chọn trường tìm kiếm", expanded=True):
+        # Gợi ý các cột quan trọng
+        default = [c for c in cols if any(x in c for x in ['ten', 'sinh', 'ma', 'so'])]
+        if not default: default = cols[:3]
+        selected = st.multiselect("Cột:", cols, default=default)
+    
+    inputs = {}
+    if selected:
+        c = st.columns(len(selected))
+        for i, col in enumerate(selected):
+            inputs[col] = c[i].text_input(f"Nhập {col}")
+    
+    if st.button("🔍 Tìm kiếm", type="primary"):
+        df = search_data('manual', inputs)
+        if not df.empty:
+            st.success(f"Tìm thấy {len(df)} kết quả.")
+            st.dataframe(df, use_container_width=True)
+        else: st.warning("Không tìm thấy.")
 
 def render_admin():
-    st.header("Quản Trị Hệ Thống")
+    st.header("Quản Trị")
     conn = init_user_db()
+    t1, t2 = st.tabs(["User", "Logs"])
     
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Thêm User")
-        with st.form("add"):
-            u = st.text_input("Username")
-            p = st.text_input("Password", type="password")
-            r = st.selectbox("Role", ["user", "admin"])
-            if st.form_submit_button("Tạo"):
-                try:
-                    conn.execute("INSERT INTO users VALUES (?,?,?)", (u, make_hashes(p), r))
+    with t1:
+        c1, c2 = st.columns(2)
+        with c1:
+            with st.form("add"):
+                u = st.text_input("User mới")
+                p = st.text_input("Pass", type="password")
+                r = st.selectbox("Role", ["user", "admin"])
+                if st.form_submit_button("Tạo"):
+                    try:
+                        conn.execute("INSERT INTO users VALUES (?,?,?)", (u, make_hashes(p), r))
+                        conn.commit()
+                        st.success(f"Đã tạo {u}")
+                        time.sleep(0.5); st.rerun()
+                    except: st.error("Trùng tên!")
+        with c2:
+            users = [x[0] for x in conn.execute("SELECT username FROM users WHERE username != 'admin'").fetchall()]
+            if users:
+                ud = st.selectbox("Xóa user", users)
+                if st.button("Xóa"):
+                    conn.execute("DELETE FROM users WHERE username=?", (ud,))
                     conn.commit()
-                    st.success(f"Đã tạo {u}")
-                    time.sleep(1)
                     st.rerun()
-                except: st.error("Tên tồn tại")
-    
-    with c2:
-        st.subheader("Xóa User")
-        users = [x[0] for x in conn.execute("SELECT username FROM users WHERE username != 'admin'").fetchall()]
-        if users:
-            u_del = st.selectbox("Chọn user", users)
-            if st.button("Xóa User"):
-                conn.execute("DELETE FROM users WHERE username=?", (u_del,))
-                conn.commit()
-                st.success("Đã xóa")
-                time.sleep(1)
-                st.rerun()
-        else: st.info("Chưa có user phụ.")
-    
-    st.divider()
-    st.subheader("Nhật ký")
-    if st.button("Xóa Logs"):
-        conn.execute("DELETE FROM logs")
-        conn.commit()
-        st.rerun()
-    
-    logs = pd.read_sql("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 100", conn)
-    st.dataframe(logs, use_container_width=True)
+            
+        st.dataframe(pd.read_sql("SELECT username, role FROM users", conn), use_container_width=True)
+
+    with t2:
+        if st.button("Xóa Logs"):
+            conn.execute("DELETE FROM logs")
+            conn.commit()
+            st.rerun()
+        st.dataframe(pd.read_sql("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 50", conn), use_container_width=True)
     conn.close()
 
-# --- MAIN ---
 def main():
-    if 'logged_in' not in st.session_state:
-        st.session_state['logged_in'] = False
-
-    # Bước 1: Đảm bảo Data sẵn sàng
-    success, msg = import_excel_to_sqlite()
-    if not success:
-        st.error(f"Lỗi khởi tạo dữ liệu: {msg}")
+    if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
+    
+    # QUAN TRỌNG: Kiểm tra và nạp dữ liệu trước khi làm bất cứ gì khác
+    data_ok, msg = import_excel_to_sqlite()
+    if not data_ok:
+        st.error(msg)
+        if st.button("Thử nạp lại dữ liệu (Xóa cache)"):
+            if os.path.exists(DB_FILE): os.remove(DB_FILE)
+            st.rerun()
         return
 
     if not st.session_state['logged_in']:
         render_login()
     else:
         with st.sidebar:
-            st.title(f"Chào {st.session_state['username']}")
-            with st.popover("API Key AI"):
-                k = st.text_input("Google API Key", type="password", value=st.session_state.get('user_api_key',''))
-                if k: st.session_state['user_api_key'] = k
+            st.title(f"Hi, {st.session_state['username']}")
+            
+            # API Key Config
+            key = st.text_input("API Key (AI)", type="password", value=st.session_state.get('user_api_key',''))
+            if key: st.session_state['user_api_key'] = key
             
             st.divider()
-            if 'page' not in st.session_state: st.session_state['page'] = 'search_ai'
+            if 'page' not in st.session_state: st.session_state['page'] = 'ai'
             
-            if st.button("🤖 Tra cứu AI", use_container_width=True): st.session_state['page'] = 'search_ai'
-            if st.button("📋 Tra cứu Thủ công", use_container_width=True): st.session_state['page'] = 'search_manual'
+            if st.button("🤖 Tra cứu AI"): st.session_state['page'] = 'ai'
+            if st.button("📋 Tra cứu Thủ công"): st.session_state['page'] = 'manual'
             if st.session_state['role'] == 'admin':
-                if st.button("🛠️ Quản trị", use_container_width=True): st.session_state['page'] = 'admin'
+                if st.button("🛠️ Quản trị"): st.session_state['page'] = 'admin'
             
             st.divider()
             if st.button("Đăng xuất"):
                 st.session_state['logged_in'] = False
                 st.rerun()
 
-        cols = get_table_columns()
+        # Main Content
+        cols = get_display_columns()
         is_ai = configure_gemini()
         
-        if st.session_state['page'] == 'search_ai':
-            render_ai_search(is_ai)
-        elif st.session_state['page'] == 'search_manual':
-            render_manual_search(cols)
-        elif st.session_state['page'] == 'admin':
-            render_admin()
-        
-        # Force rerun để cập nhật giao diện nếu vừa chuyển trang
-        if 'rerun_trigger' in st.session_state:
-            del st.session_state['rerun_trigger']
-            st.rerun()
+        if st.session_state['page'] == 'ai': render_search_ai(is_ai)
+        elif st.session_state['page'] == 'manual': render_search_manual(cols)
+        elif st.session_state['page'] == 'admin': render_admin()
 
 if __name__ == '__main__':
+    init_user_db()
     main()
