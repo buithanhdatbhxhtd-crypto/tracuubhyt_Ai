@@ -1,0 +1,6 @@
+streamlit
+pandas
+pyxlsb
+unidecode
+google-generativeai
+openpyxl
