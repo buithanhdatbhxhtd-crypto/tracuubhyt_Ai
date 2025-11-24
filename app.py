@@ -147,6 +147,7 @@ def ai_search_logic(df, keyword):
 # --- 4. GIAO DIỆN NGƯỜI DÙNG ---
 
 def render_login():
+    """Hàm hiển thị màn hình đăng nhập"""
     st.markdown("<h2 style='text-align: center;'>🔐 Đăng Nhập Hệ Thống BHXH</h2>", unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns([1, 2, 1])
@@ -298,7 +299,7 @@ def main():
         st.session_state['logged_in'] = False
 
     if not st.session_state['logged_in']:
-        login()
+        render_login()  # <-- ĐÃ SỬA LẠI TÊN HÀM CHO ĐÚNG
     else:
         # --- SIDEBAR ---
         with st.sidebar:
