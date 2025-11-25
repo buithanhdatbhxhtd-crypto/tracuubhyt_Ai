@@ -60,7 +60,7 @@ def log_action(u, a, d=""):
         c.commit(); c.close()
     except: pass
 
-# --- 2. HỆ THỐNG AI THÔNG MINH (AUTO-DETECT MODEL) ---
+# --- 2. HỆ THỐNG AI THÔNG MINH (AUTO-DETECT & STREAMING) ---
 def configure_ai():
     api_key = HARDCODED_API_KEY
     if not api_key: api_key = st.session_state.get('user_api_key', '')
@@ -72,26 +72,19 @@ def configure_ai():
     return False
 
 def get_working_model_name():
-    """
-    Hàm này hỏi Google: 'Tôi được dùng những model nào?'
-    Sau đó chọn cái tốt nhất có thể dùng.
-    """
+    """Hỏi Google xem tài khoản được dùng model nào"""
     if 'valid_model_name' in st.session_state:
         return st.session_state['valid_model_name']
     
     try:
-        # Lấy danh sách model khả dụng với Key này
         models = genai.list_models()
         for m in models:
-            # Tìm model hỗ trợ chat hoặc text
             if 'generateContent' in m.supported_generation_methods:
-                # Ưu tiên Flash hoặc Pro nếu có
-                name = m.name.replace('models/', '') # Lấy tên sạch
+                name = m.name.replace('models/', '')
                 if 'flash' in name: 
                     st.session_state['valid_model_name'] = name
                     return name
-                
-        # Nếu không có flash, lặp lại lấy cái đầu tiên tìm được
+        
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 name = m.name.replace('models/', '')
@@ -99,32 +92,44 @@ def get_working_model_name():
                 return name
 
     except Exception as e:
-        # Nếu lỗi list_models, dùng fallback cứng
-        print(f"Lỗi list_models: {e}")
+        print(f"Lỗi model: {e}")
     
-    return "gemini-pro" # Model cũ nhưng phổ biến nhất
+    return "gemini-pro"
 
-def get_ai_response(prompt, role_desc=""):
-    if not configure_ai(): return "⚠️ Lỗi: Chưa có API Key."
+def get_ai_response(prompt, role_desc="", stream=False):
+    """
+    Hàm gọi AI hỗ trợ Streaming (hiện chữ chạy từng dòng)
+    """
+    if not configure_ai(): 
+        msg = "⚠️ Lỗi: Chưa có API Key."
+        return msg if not stream else iter([msg])
 
-    # Tự động lấy tên model đúng nhất
     model_name = get_working_model_name()
+    full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
     
     try:
         model = genai.GenerativeModel(model_name)
-        full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
-        response = model.generate_content(full_prompt)
-        return response.text
+        # Chế độ Streaming
+        if stream:
+            return model.generate_content(full_prompt, stream=True)
+        # Chế độ thường
+        else:
+            response = model.generate_content(full_prompt)
+            return response.text
     except Exception as e:
-        # Nếu vẫn lỗi, thử model 'gemini-pro' lần cuối
+        # Fallback model cũ nếu lỗi
         try:
             if model_name != 'gemini-pro':
                 model = genai.GenerativeModel('gemini-pro')
-                response = model.generate_content(full_prompt)
-                return response.text
+                if stream:
+                    return model.generate_content(full_prompt, stream=True)
+                else:
+                    return model.generate_content(full_prompt).text
         except:
             pass
-        return f"⚠️ AI đang bận ({model_name}). Lỗi: {str(e)}"
+        
+        err = f"⚠️ AI đang bận ({model_name}). Lỗi: {str(e)}"
+        return err if not stream else iter([err])
 
 # --- 3. XỬ LÝ DỮ LIỆU ---
 def clean_text(text): return unidecode.unidecode(str(text)).lower().replace(' ', '') if pd.notna(text) else ""
@@ -237,11 +242,23 @@ def render_search(cols):
                 st.dataframe(df, use_container_width=True, hide_index=True)
                 if len(df) == 1:
                     with st.expander("✨ AI Phân tích", expanded=True):
-                        with st.spinner("AI đang đọc..."):
-                            st.write(get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", "Chuyên gia BHXH tóm tắt quyền lợi."))
+                        message_ph = st.empty()
+                        full_res = ""
+                        try:
+                            # Streaming cho phân tích hồ sơ
+                            stream = get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", "Chuyên gia BHXH tóm tắt quyền lợi.", stream=True)
+                            if isinstance(stream, str):
+                                message_ph.write(stream)
+                            else:
+                                for chunk in stream:
+                                    if chunk.text:
+                                        full_res += chunk.text
+                                        message_ph.write(full_res + "▌")
+                                message_ph.write(full_res)
+                        except:
+                            message_ph.write("Lỗi AI.")
             else: st.warning("Không tìm thấy.")
     with tab2:
-        # Grid layout
         defaults = ['sobhxh', 'hoten', 'ngaysinh', 'socmnd']
         sel_cols = [c for c in cols if any(x in unidecode.unidecode(c).lower() for x in defaults)]
         if not sel_cols: sel_cols = cols[:4]
@@ -274,12 +291,6 @@ def render_chatbot():
     st.subheader("🤖 Trợ lý ảo BHXH")
     if not configure_ai(): st.error("Lỗi API Key"); return
     
-    # Debug: Hiển thị model đang dùng để kiểm tra
-    if 'ai_debug_show' not in st.session_state:
-        model_used = get_working_model_name()
-        st.toast(f"Đang dùng AI Model: {model_used}", icon="🤖")
-        st.session_state['ai_debug_show'] = True
-
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "model", "content": "Chào bạn! Tôi là trợ lý ảo BHXH/BHYT."}]
 
@@ -289,11 +300,30 @@ def render_chatbot():
     if prompt := st.chat_input("Hỏi gì đó..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
+        
         with st.chat_message("model"):
-            with st.spinner("..."):
-                res = get_ai_response(prompt, "Bạn là chuyên gia tư vấn BHXH Việt Nam.")
-                st.markdown(res)
-                st.session_state.messages.append({"role": "model", "content": res})
+            message_placeholder = st.empty()
+            full_response = ""
+            
+            # Gọi hàm AI với chế độ Streaming
+            stream_res = get_ai_response(prompt, "Bạn là chuyên gia tư vấn BHXH Việt Nam.", stream=True)
+            
+            try:
+                if isinstance(stream_res, str):
+                    full_response = stream_res
+                    message_placeholder.markdown(full_response)
+                else:
+                    for chunk in stream_res:
+                        if chunk.text:
+                            full_response += chunk.text
+                            # Hiệu ứng gõ chữ
+                            message_placeholder.markdown(full_response + "▌")
+                    message_placeholder.markdown(full_response)
+            except Exception as e:
+                full_response = f"Lỗi: {str(e)}"
+                message_placeholder.markdown(full_response)
+            
+            st.session_state.messages.append({"role": "model", "content": full_response})
 
 def render_content():
     st.subheader("✍️ Tạo Nội Dung")
@@ -302,8 +332,22 @@ def render_content():
     with c1:
         topic = st.text_input("Chủ đề:")
         if st.button("Viết bài", type="primary") and topic:
-            with st.spinner("Đang viết..."):
-                st.session_state['content'] = get_ai_response(f"Viết bài tuyên truyền về: {topic}", "Chuyên viên truyền thông")
+            message_ph = st.empty()
+            full_res = ""
+            # Streaming cho tạo nội dung
+            stream = get_ai_response(f"Viết bài tuyên truyền về: {topic}", "Chuyên viên truyền thông", stream=True)
+            
+            try:
+                if isinstance(stream, str):
+                    st.session_state['content'] = stream
+                else:
+                    for chunk in stream:
+                        if chunk.text:
+                            full_res += chunk.text
+                            message_ph.text_area("Đang viết...", value=full_res, height=400)
+                    st.session_state['content'] = full_res
+            except: pass
+            
     with c2:
         if 'content' in st.session_state: st.text_area("Kết quả:", value=st.session_state['content'], height=400)
 
