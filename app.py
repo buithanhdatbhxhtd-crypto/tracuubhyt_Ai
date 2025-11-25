@@ -64,12 +64,35 @@ def log_action(username, action, details=""):
     except: pass
 
 def configure_gemini():
-    # Ưu tiên lấy từ secrets, sau đó là session_state
     key = st.secrets.get("GOOGLE_API_KEY", st.session_state.get('user_api_key', ''))
     if key: 
         genai.configure(api_key=key)
         return True
     return False
+
+# --- HÀM GỌI AI AN TOÀN (FALLBACK MECHANISM) ---
+def get_ai_response(prompt, role_desc=""):
+    """
+    Hàm này sẽ thử các model khác nhau.
+    Nếu model mới (1.5) lỗi, nó sẽ tự động dùng model cũ (pro).
+    """
+    # Danh sách ưu tiên model
+    models_to_try = ['gemini-1.5-flash', 'gemini-pro']
+    
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(model_name)
+            full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
+            response = model.generate_content(full_prompt)
+            return response.text
+        except Exception as e:
+            # Nếu đây là model cuối cùng mà vẫn lỗi thì mới báo lỗi ra ngoài
+            if model_name == models_to_try[-1]:
+                return f"⚠️ Hệ thống AI đang bận hoặc gặp lỗi: {str(e)}"
+            # Nếu chưa phải cuối cùng, thử model tiếp theo (Silent retry)
+            continue
+            
+    return "Không thể kết nối tới AI."
 
 # --- 2. XỬ LÝ DỮ LIỆU ---
 def clean_text(text):
@@ -220,13 +243,10 @@ def render_search(cols):
                 if len(df)==1 and configure_gemini():
                     with st.expander("✨ AI Phân tích hồ sơ"):
                         with st.spinner("AI đang đọc dữ liệu..."):
-                            try:
-                                # Thay đổi model từ gemini-pro sang gemini-1.5-flash
-                                model = genai.GenerativeModel('gemini-1.5-flash')
-                                res = model.generate_content(f"Dữ liệu BHXH: {df.iloc[0].to_dict()}. Tóm tắt quyền lợi bảo hiểm.")
-                                st.write(res.text)
-                            except Exception as e: 
-                                st.error(f"Lỗi kết nối AI: {e}")
+                            # Dùng hàm get_ai_response thay vì gọi trực tiếp
+                            role = "Bạn là chuyên gia BHXH. Hãy tóm tắt quyền lợi bảo hiểm cho người này dựa trên dữ liệu."
+                            res = get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", role)
+                            st.write(res)
             else: st.warning("Không tìm thấy kết quả.")
 
     with tab2:
@@ -271,18 +291,15 @@ def render_chatbot():
         st.warning("Vui lòng nhập API Key ở thanh bên trái để sử dụng tính năng này.")
         return
 
-    # Khởi tạo lịch sử chat
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            {"role": "model", "content": "Chào bạn! Tôi là trợ lý ảo chuyên về BHXH, BHYT. Bạn cần tôi giúp gì hôm nay? (Ví dụ: Cách tính lương hưu, Thủ tục cấp lại thẻ BHYT...)"}
+            {"role": "model", "content": "Chào bạn! Tôi là trợ lý ảo chuyên về BHXH, BHYT. Bạn cần tôi giúp gì hôm nay?"}
         ]
 
-    # Hiển thị lịch sử chat
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Xử lý input người dùng
     if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -290,25 +307,19 @@ def render_chatbot():
 
         with st.chat_message("model"):
             with st.spinner("Đang suy nghĩ..."):
-                try:
-                    # Thay đổi model từ gemini-pro sang gemini-1.5-flash
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    # Tạo context cho AI hiểu vai trò
-                    context = """
-                    Bạn là một chuyên gia tư vấn về Bảo hiểm xã hội (BHXH) và Bảo hiểm y tế (BHYT) tại Việt Nam. 
-                    Nhiệm vụ của bạn là trả lời các câu hỏi của người dân một cách chính xác, dễ hiểu, trích dẫn luật nếu cần.
-                    Hãy giữ thái độ thân thiện, chuyên nghiệp. Nếu không chắc chắn, hãy khuyên họ liên hệ cơ quan BHXH gần nhất.
-                    """
-                    chat = model.start_chat(history=[])
-                    response = chat.send_message(f"{context}\n\nNgười dùng hỏi: {prompt}")
-                    st.markdown(response.text)
-                    st.session_state.messages.append({"role": "model", "content": response.text})
-                except Exception as e:
-                    st.error(f"Lỗi: {e}")
+                role_desc = """
+                Bạn là một chuyên gia tư vấn về Bảo hiểm xã hội (BHXH) và Bảo hiểm y tế (BHYT) tại Việt Nam. 
+                Nhiệm vụ của bạn là trả lời các câu hỏi của người dân một cách chính xác, dễ hiểu, trích dẫn luật nếu cần.
+                Hãy giữ thái độ thân thiện, chuyên nghiệp.
+                """
+                # Dùng hàm get_ai_response an toàn
+                response_text = get_ai_response(prompt, role_desc)
+                st.markdown(response_text)
+                st.session_state.messages.append({"role": "model", "content": response_text})
 
 def render_content_creator():
     st.subheader("✍️ Sáng Tạo Nội Dung Tuyên Truyền")
-    st.caption("Công cụ hỗ trợ viết bài đăng Facebook, Zalo, Thông báo cổ động người dân tham gia BHXH/BHYT.")
+    st.caption("Công cụ hỗ trợ viết bài đăng Facebook, Zalo, Thông báo cổ động.")
 
     if not configure_gemini():
         st.warning("Vui lòng nhập API Key để sử dụng.")
@@ -318,39 +329,25 @@ def render_content_creator():
     
     with col1:
         topic = st.text_input("Chủ đề bài viết:", placeholder="Ví dụ: Lợi ích của BHXH tự nguyện")
-        target_audience = st.selectbox("Đối tượng hướng đến:", ["Người lao động tự do", "Học sinh sinh viên", "Người cao tuổi", "Doanh nghiệp", "Toàn dân"])
-        content_type = st.selectbox("Loại nội dung:", ["Bài đăng Facebook (Vui vẻ, gần gũi)", "Thông báo hành chính (Trang trọng)", "Khẩu hiệu cổ động (Ngắn gọn, súc tích)", "Kịch bản tư vấn (Hội thoại)"])
+        target_audience = st.selectbox("Đối tượng:", ["Người lao động tự do", "Học sinh sinh viên", "Người cao tuổi", "Doanh nghiệp", "Toàn dân"])
+        content_type = st.selectbox("Loại nội dung:", ["Bài đăng Facebook (Vui vẻ)", "Thông báo hành chính", "Khẩu hiệu cổ động", "Kịch bản tư vấn"])
         
         if st.button("✨ Tạo nội dung", type="primary"):
             if topic:
                 with st.spinner("AI đang viết bài..."):
-                    try:
-                        # Thay đổi model từ gemini-pro sang gemini-1.5-flash
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        prompt = f"""
-                        Hãy đóng vai một chuyên viên truyền thông của cơ quan Bảo hiểm xã hội.
-                        Nhiệm vụ: Viết một nội dung tuyên truyền.
-                        - Chủ đề: {topic}
-                        - Đối tượng: {target_audience}
-                        - Phong cách/Định dạng: {content_type}
-                        
-                        Yêu cầu:
-                        - Nội dung chính xác, tuân thủ pháp luật Việt Nam.
-                        - Ngôn ngữ cuốn hút, dễ hiểu, đi vào lòng người.
-                        - Nếu là bài đăng MXH, hãy thêm các emoji phù hợp và các hashtag liên quan (#BHXH, #BHYT...).
-                        - Trình bày rõ ràng.
-                        """
-                        response = model.generate_content(prompt)
-                        st.session_state['generated_content'] = response.text
-                    except Exception as e:
-                        st.error(f"Lỗi: {e}")
+                    role = "Bạn là chuyên viên truyền thông BHXH."
+                    prompt = f"Viết nội dung về: {topic}. Đối tượng: {target_audience}. Dạng: {content_type}. Yêu cầu: Hấp dẫn, chuẩn mực, có emoji và hashtag."
+                    
+                    # Dùng hàm get_ai_response an toàn
+                    res = get_ai_response(prompt, role)
+                    st.session_state['generated_content'] = res
             else:
                 st.warning("Vui lòng nhập chủ đề.")
 
     with col2:
         st.write("### Kết quả:")
         if 'generated_content' in st.session_state:
-            st.text_area("Nội dung đã tạo (Bạn có thể copy):", value=st.session_state['generated_content'], height=400)
+            st.text_area("Nội dung đã tạo (Copy để dùng):", value=st.session_state['generated_content'], height=400)
         else:
             st.info("Kết quả sẽ hiển thị tại đây sau khi bạn bấm nút Tạo.")
 
