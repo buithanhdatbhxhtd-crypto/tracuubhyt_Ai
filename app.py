@@ -20,7 +20,7 @@ st.set_page_config(
 
 # --- 🔑 CẤU HÌNH API KEY TẠI ĐÂY (DÁN KEY CỦA BẠN VÀO DƯỚI) ---
 # Ví dụ: HARDCODED_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE"
-HARDCODED_API_KEY = "" 
+HARDCODED_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE" 
 
 # Tên file
 EXCEL_FILE = 'aaa.xlsb'
@@ -462,3 +462,4 @@ def main():
 if __name__ == '__main__':
     init_user_db()
     main()
+
