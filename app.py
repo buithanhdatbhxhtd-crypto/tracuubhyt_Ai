@@ -19,12 +19,10 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# 🔑 KHU VỰC NHẬP API KEY (DÁN KEY CỦA BẠN VÀO DƯỚI ĐÂY)
+# 🔑 KHU VỰC NHẬP API KEY
 # ==============================================================================
-# Cách lấy key: Vào https://aistudio.google.com/app/apikey -> Create API key
-MY_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE"  # <--- DÁN KEY VÀO GIỮA 2 DẤU NGOẶC KÉP
+MY_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE"
 # ==============================================================================
-
 
 # Tên file dữ liệu
 EXCEL_FILE = 'aaa.xlsb'
@@ -32,7 +30,7 @@ DB_FILE = 'bhxh_data.db'
 ZIP_PART_PREFIX = 'bhxh_data.zip.' 
 USER_DB = 'users.db'
 
-# --- 1. HỆ THỐNG QUẢN LÝ (USER & LOGS) ---
+# --- 1. HỆ THỐNG QUẢN LÝ ---
 def init_user_db():
     """Khởi tạo DB User"""
     conn = sqlite3.connect(USER_DB, check_same_thread=False)
@@ -42,7 +40,6 @@ def init_user_db():
     c.execute('''CREATE TABLE IF NOT EXISTS users 
                  (username TEXT PRIMARY KEY, password TEXT, role TEXT)''')
     
-    # Tự động sửa bảng logs nếu lỗi
     try:
         c.execute("SELECT * FROM logs LIMIT 1")
         cols = [d[0] for d in c.description]
@@ -52,7 +49,6 @@ def init_user_db():
         c.execute('''CREATE TABLE logs 
                      (timestamp TEXT, username TEXT, action TEXT, details TEXT)''')
     
-    # Tạo admin mặc định
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
         c.execute("INSERT INTO users VALUES (?, ?, ?)", 
@@ -73,17 +69,12 @@ def log_action(username, action, details=""):
         conn.close()
     except: pass
 
-# --- 2. HỆ THỐNG AI THÔNG MINH (TỰ DÒ TÌM MODEL) ---
+# --- 2. HỆ THỐNG AI (ĐÃ TỐI ƯU MODEL FLASH) ---
 def configure_ai():
-    """Cấu hình API Key ưu tiên từ biến hardcoded"""
-    # 1. Lấy key từ code (ưu tiên cao nhất)
     api_key = MY_API_KEY
-    
-    # 2. Nếu trong code để trống, thử lấy từ giao diện
     if not api_key or "AIza" not in api_key:
         api_key = st.session_state.get('user_api_key', '')
     
-    # 3. Nếu vẫn không có, thử lấy từ secrets
     if not api_key:
         try: api_key = st.secrets["GOOGLE_API_KEY"]
         except: pass
@@ -93,60 +84,36 @@ def configure_ai():
         return True
     return False
 
-def get_working_model():
-    """
-    Hàm này tự động hỏi Google xem tài khoản này được dùng model nào.
-    Tránh lỗi 404 do gọi sai tên model.
-    """
-    if 'working_model_name' in st.session_state:
-        return st.session_state['working_model_name']
-
-    try:
-        # Lấy danh sách model mà key này dùng được
-        models = genai.list_models()
-        for m in models:
-            # Tìm model hỗ trợ tạo nội dung (generateContent)
-            if 'generateContent' in m.supported_generation_methods:
-                # Ưu tiên các model mới và tốt
-                if 'flash' in m.name or 'pro' in m.name:
-                    st.session_state['working_model_name'] = m.name
-                    return m.name
-        
-        # Nếu không tìm thấy cái nào ưu tiên, lấy cái đầu tiên tìm được
-        for m in models:
-            if 'generateContent' in m.supported_generation_methods:
-                st.session_state['working_model_name'] = m.name
-                return m.name
-                
-    except Exception as e:
-        return None # Lỗi kết nối hoặc sai key
-    
-    return "gemini-pro" # Fallback cuối cùng
-
 def get_ai_response(prompt, role_desc=""):
     if not configure_ai():
-        return "⚠️ Chưa nhập API Key. Vui lòng điền Key vào file code (dòng 22) hoặc nhập trên menu."
+        return "⚠️ Chưa nhập API Key."
 
-    # Tự động chọn model đang sống
-    model_name = get_working_model()
-    if not model_name:
-        return "⚠️ API Key không hợp lệ hoặc lỗi kết nối Google."
-
-    try:
-        model = genai.GenerativeModel(model_name)
-        full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
-        response = model.generate_content(full_prompt)
-        return response.text
-    except Exception as e:
-        # Nếu model tự chọn vẫn lỗi, thử model "huyền thoại" gemini-pro
+    # Ưu tiên tuyệt đối model Flash (Nhanh, Miễn phí nhiều)
+    # Sau đó mới thử các model Pro nếu Flash lỗi
+    models_priority = [
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-pro',
+        'gemini-pro'
+    ]
+    
+    last_error = ""
+    
+    for model_name in models_priority:
         try:
-            model = genai.GenerativeModel("gemini-pro")
+            model = genai.GenerativeModel(model_name)
+            full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
             response = model.generate_content(full_prompt)
             return response.text
-        except:
-            return f"⚠️ Lỗi AI ({model_name}): {str(e)}"
+        except Exception as e:
+            last_error = str(e)
+            if "429" in last_error: # Nếu hết quota model này, thử model khác ngay
+                continue
+            continue
+            
+    return f"⚠️ Hệ thống AI đang bận (Hết quota miễn phí trong ngày). Lỗi: {last_error}"
 
-# --- 3. XỬ LÝ DỮ LIỆU LỚN (SQLITE) ---
+# --- 3. XỬ LÝ DỮ LIỆU ---
 def clean_text(text):
     if pd.isna(text) or str(text).lower() == 'nan' or str(text).strip() == '': return ""
     return unidecode.unidecode(str(text)).lower().replace(' ', '')
@@ -196,7 +163,7 @@ def import_excel_to_sqlite():
     try:
         msg.info("⏳ Đang đọc file Excel...")
         df = pd.read_excel(EXCEL_FILE, engine='pyxlsb')
-        bar.progress(40)
+        bar.progress(30)
         df.columns = [unidecode.unidecode(str(c)).strip().replace(' ', '_').lower() for c in df.columns]
         df = df.astype(str).replace(['nan', 'None', 'NaT'], '')
         df['master_search_idx'] = df.apply(lambda x: clean_text(' '.join(x.values)), axis=1)
@@ -276,7 +243,8 @@ def render_search(cols):
                 if len(df) == 1:
                     with st.expander("✨ AI Phân tích hồ sơ", expanded=True):
                         with st.spinner("AI đang đọc..."):
-                            res = get_ai_response(f"Hồ sơ BHXH: {df.iloc[0].to_dict()}. Tóm tắt quyền lợi ngắn gọn.")
+                            role = "Bạn là chuyên gia BHXH. Tóm tắt quyền lợi từ dữ liệu này. Trả lời ngắn gọn."
+                            res = get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", role)
                             st.write(res)
             else: st.warning("Không tìm thấy.")
 
@@ -307,16 +275,10 @@ def render_search(cols):
 def render_chatbot():
     st.subheader("🤖 Trợ lý ảo BHXH")
     
-    # Kiểm tra trạng thái AI
-    model_name = get_working_model()
-    if not model_name:
-        st.error("❌ Lỗi API Key: Vui lòng dán Key vào dòng 22 trong file code app.py")
+    # Chỉ báo lỗi nếu không có key nào
+    if not configure_ai():
+        st.error("❌ Lỗi: Chưa có API Key.")
         return
-    
-    # Chỉ hiện 1 lần đầu tiên để user yên tâm
-    if 'ai_checked' not in st.session_state:
-        st.toast(f"✅ Đã kết nối AI thành công! (Model: {model_name})", icon="🤖")
-        st.session_state['ai_checked'] = True
 
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "model", "content": "Chào bạn! Tôi có thể giúp gì về luật BHXH/BHYT?"}]
@@ -330,14 +292,14 @@ def render_chatbot():
 
         with st.chat_message("model"):
             with st.spinner("..."):
-                role = "Bạn là chuyên gia tư vấn BHXH Việt Nam. Trả lời ngắn gọn, chính xác, thân thiện."
+                role = "Bạn là chuyên gia tư vấn BHXH/BHYT Việt Nam. Trả lời ngắn gọn, chính xác, thân thiện."
                 res = get_ai_response(prompt, role)
                 st.markdown(res)
                 st.session_state.messages.append({"role": "model", "content": res})
 
 def render_content():
     st.subheader("✍️ Tạo Nội Dung Tuyên Truyền")
-    if not get_working_model():
+    if not configure_ai():
         st.error("Chưa cấu hình API Key.")
         return
 
@@ -345,11 +307,14 @@ def render_content():
     with c1:
         topic = st.text_input("Chủ đề:", placeholder="Vd: Lợi ích BHYT 5 năm liên tục")
         target = st.selectbox("Đối tượng:", ["Người lao động", "Học sinh", "Người già", "Toàn dân"])
-        ctype = st.selectbox("Loại:", ["Bài Facebook (Vui vẻ)", "Thông báo (Trang trọng)", "Kịch bản tư vấn"])
+        ctype = st.selectbox("Loại:", ["Bài đăng Facebook", "Thông báo", "Khẩu hiệu", "Kịch bản"])
+        
         if st.button("✨ Viết bài ngay", type="primary"):
             if topic:
                 with st.spinner("Đang viết..."):
-                    res = get_ai_response(f"Viết về: {topic}. Cho: {target}. Dạng: {ctype}. Yêu cầu: Hấp dẫn, có emoji.", "Chuyên viên truyền thông")
+                    role = "Bạn là chuyên viên truyền thông BHXH."
+                    prompt = f"Viết về: {topic}. Cho: {target}. Dạng: {ctype}. Yêu cầu: Hấp dẫn, có emoji."
+                    res = get_ai_response(prompt, role)
                     st.session_state['content'] = res
             else: st.warning("Nhập chủ đề.")
     with c2:
@@ -367,7 +332,7 @@ def render_admin():
         c1, c2 = st.columns(2)
         with c1:
             with st.form("add"):
-                u = st.text_input("User"); p = st.text_input("Pass", type="password"); r = st.selectbox("Role", ["user", "admin"])
+                u = st.text_input("User"); p = st.text_input("Pass", type="password"); r = st.selectbox("Quyền", ["user", "admin"])
                 if st.form_submit_button("Tạo"):
                     try: conn.execute("INSERT INTO users VALUES (?,?,?)", (u, make_hashes(p), r)); conn.commit(); st.success("OK"); st.rerun()
                     except: st.error("Trùng tên")
@@ -377,8 +342,8 @@ def render_admin():
             if ud and st.button("Xóa"): conn.execute("DELETE FROM users WHERE username=?", (ud,)); conn.commit(); st.success("Xóa xong"); st.rerun()
 
     with t2:
-        if st.button("Xóa Logs"): conn.execute("DELETE FROM logs"); conn.commit(); st.rerun()
-        st.dataframe(pd.read_sql("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 100", conn), use_container_width=True)
+        if st.button("Xóa Nhật ký"): conn.execute("DELETE FROM logs"); conn.commit(); st.rerun()
+        st.dataframe(pd.read_sql("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 500", conn), use_container_width=True)
     conn.close()
 
 # --- MAIN ---
