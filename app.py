@@ -18,8 +18,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 🔑 DÁN KHÓA API CỦA BẠN VÀO GIỮA 2 DẤU NGOẶC KÉP BÊN DƯỚI ---
-# Ví dụ: HARDCODED_API_KEY = "AIzaSyDxxxx..."
+# --- 🔑 CẤU HÌNH API KEY (ĐÃ ĐIỀN SẴN) ---
 HARDCODED_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE" 
 
 # Tên file
@@ -68,50 +67,33 @@ def log_action(username, action, details=""):
     except: pass
 
 def configure_gemini():
-    # 1. Ưu tiên key cứng
+    # 1. Ưu tiên key cứng trong code
     if HARDCODED_API_KEY:
         genai.configure(api_key=HARDCODED_API_KEY)
         return True
 
-    # 2. Key từ giao diện
+    # 2. Nếu không có, lấy từ giao diện
     key = st.secrets.get("GOOGLE_API_KEY", st.session_state.get('user_api_key', ''))
     if key: 
         genai.configure(api_key=key)
         return True
     return False
 
-# --- HÀM AI THÔNG MINH (TỰ ĐỘNG TÌM MODEL) ---
+# --- HÀM GỌI AI MỚI NHẤT (FIX LỖI 404) ---
 def get_ai_response(prompt, role_desc=""):
-    """
-    Tự động thử danh sách các model, cái nào chạy được thì dùng.
-    Không bao giờ lo lỗi 404 Model Not Found.
-    """
     if not configure_gemini():
-        return "⚠️ Chưa có API Key. Vui lòng nhập Key trong code hoặc trên menu."
+        return "⚠️ Lỗi: Chưa có API Key."
 
-    # Danh sách các model để thử (từ mới nhất đến cũ nhất)
-    models_to_try = [
-        'gemini-1.5-flash',
-        'gemini-1.5-pro',
-        'gemini-1.0-pro',
-        'gemini-pro'
-    ]
+    # Chỉ dùng model mới nhất, ổn định nhất hiện nay
+    model_name = 'gemini-1.5-flash'
     
-    last_error = ""
-    
-    for model_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(model_name)
-            full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
-            # Thử gọi API
-            response = model.generate_content(full_prompt)
-            return response.text
-        except Exception as e:
-            # Nếu lỗi, lưu lại và thử model tiếp theo
-            last_error = str(e)
-            continue
-            
-    return f"⚠️ Hệ thống AI đang bận hoặc Key lỗi. Chi tiết: {last_error}"
+    try:
+        model = genai.GenerativeModel(model_name)
+        full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
+        response = model.generate_content(full_prompt)
+        return response.text
+    except Exception as e:
+        return f"⚠️ Lỗi kết nối AI ({model_name}): {str(e)}\n\n👉 Gợi ý: Hãy thử Refresh lại trang web."
 
 # --- 2. XỬ LÝ DỮ LIỆU ---
 def clean_text(text):
@@ -136,7 +118,7 @@ def check_and_prepare_data():
     parts = sorted(glob.glob(f"{ZIP_PART_PREFIX}*"))
     if parts:
         msg = st.empty()
-        msg.info(f"📦 Đang ghép nối dữ liệu ({len(parts)} phần)...")
+        msg.info(f"📦 Tìm thấy {len(parts)} phần dữ liệu. Đang ghép nối...")
         try:
             full_zip = "bhxh_data_full.zip"
             with open(full_zip, 'wb') as outfile:
@@ -144,14 +126,14 @@ def check_and_prepare_data():
                     with open(part, 'rb') as infile:
                         outfile.write(infile.read())
             
-            msg.info("📦 Đang giải nén...")
+            msg.info("📦 Đang giải nén dữ liệu...")
             with zipfile.ZipFile(full_zip, 'r') as zip_ref:
                 zip_ref.extractall()
             
             if os.path.exists(full_zip): os.remove(full_zip)
             
-            msg.success("✅ Xong!")
-            time.sleep(0.5)
+            msg.success("✅ Đã khôi phục dữ liệu thành công!")
+            time.sleep(1)
             msg.empty()
             return True, "Restored"
         except Exception as e:
@@ -160,10 +142,10 @@ def check_and_prepare_data():
     if os.path.exists(EXCEL_FILE):
         return import_excel_to_sqlite()
 
-    return False, "⚠️ Không tìm thấy dữ liệu."
+    return False, "⚠️ Không tìm thấy dữ liệu. Hãy upload file bhxh_data.zip... lên GitHub"
 
 def import_excel_to_sqlite():
-    st.warning("⚠️ Đang nạp từ Excel (Chậm). Nên dùng tool chia nhỏ file.")
+    st.warning("⚠️ Đang nạp từ Excel. Khuyên dùng tool 'local_converter.py' để nhanh hơn.")
     conn = init_data_db()
     msg = st.empty(); bar = st.progress(0)
     try:
@@ -249,7 +231,7 @@ def render_login():
 
 def render_search(cols):
     st.subheader("🔍 Tra Cứu Dữ Liệu")
-    tab1, tab2 = st.tabs(["Tra cứu Nhanh (AI)", "Tra cứu Chính xác (Thủ công)"])
+    tab1, tab2 = st.tabs(["Tra cứu Nhanh", "Tra cứu Chính xác"])
     
     with tab1:
         st.info("Nhập thông tin bất kỳ: Tên, số thẻ, ngày sinh...")
@@ -261,11 +243,11 @@ def render_search(cols):
                 st.dataframe(df, use_container_width=True, hide_index=True)
                 if len(df)==1:
                     with st.expander("✨ AI Phân tích hồ sơ", expanded=True):
-                        with st.spinner("AI đang đọc..."):
-                            role = "Bạn là chuyên gia BHXH. Tóm tắt quyền lợi từ dữ liệu này. Trả lời ngắn gọn."
+                        with st.spinner("AI đang đọc dữ liệu..."):
+                            role = "Bạn là chuyên gia BHXH. Hãy tóm tắt quyền lợi từ dữ liệu này. Trả lời ngắn gọn."
                             res = get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", role)
                             st.write(res)
-            else: st.warning("Không tìm thấy.")
+            else: st.warning("Không tìm thấy kết quả.")
 
     with tab2:
         priority_cols = ['sobhxh', 'hoten', 'ngaysinh', 'socmnd']
@@ -305,10 +287,6 @@ def render_search(cols):
 def render_chatbot():
     st.subheader("🤖 Trợ lý ảo BHXH/BHYT")
     
-    if not HARDCODED_API_KEY and not st.session_state.get('user_api_key'):
-        st.warning("⚠️ Chưa có API Key.")
-        return
-
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "model", "content": "Chào bạn! Tôi có thể giúp gì về BHXH/BHYT?"}]
 
@@ -330,10 +308,6 @@ def render_chatbot():
 def render_content_creator():
     st.subheader("✍️ Sáng Tạo Nội Dung")
     
-    if not HARDCODED_API_KEY and not st.session_state.get('user_api_key'):
-        st.warning("⚠️ Chưa có API Key.")
-        return
-
     c1, c2 = st.columns(2)
     with c1:
         topic = st.text_input("Chủ đề:", placeholder="Vd: Lợi ích BHXH tự nguyện")
@@ -401,6 +375,7 @@ def main():
                 if st.button("🛠️ Quản trị", use_container_width=True): st.session_state['page'] = 'admin'
             
             st.markdown("---")
+            # Ẩn ô nhập key vì đã có key cứng
             if not HARDCODED_API_KEY:
                 with st.expander("🔑 API Key"):
                     k = st.text_input("Key", type="password", value=st.session_state.get('user_api_key',''))
