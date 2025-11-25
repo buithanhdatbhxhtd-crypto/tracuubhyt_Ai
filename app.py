@@ -221,10 +221,12 @@ def render_search(cols):
                     with st.expander("✨ AI Phân tích hồ sơ"):
                         with st.spinner("AI đang đọc dữ liệu..."):
                             try:
-                                model = genai.GenerativeModel('gemini-pro')
+                                # Thay đổi model từ gemini-pro sang gemini-1.5-flash
+                                model = genai.GenerativeModel('gemini-1.5-flash')
                                 res = model.generate_content(f"Dữ liệu BHXH: {df.iloc[0].to_dict()}. Tóm tắt quyền lợi bảo hiểm.")
                                 st.write(res.text)
-                            except: st.warning("Lỗi kết nối AI")
+                            except Exception as e: 
+                                st.error(f"Lỗi kết nối AI: {e}")
             else: st.warning("Không tìm thấy kết quả.")
 
     with tab2:
@@ -289,7 +291,8 @@ def render_chatbot():
         with st.chat_message("model"):
             with st.spinner("Đang suy nghĩ..."):
                 try:
-                    model = genai.GenerativeModel('gemini-pro')
+                    # Thay đổi model từ gemini-pro sang gemini-1.5-flash
+                    model = genai.GenerativeModel('gemini-1.5-flash')
                     # Tạo context cho AI hiểu vai trò
                     context = """
                     Bạn là một chuyên gia tư vấn về Bảo hiểm xã hội (BHXH) và Bảo hiểm y tế (BHYT) tại Việt Nam. 
@@ -322,7 +325,8 @@ def render_content_creator():
             if topic:
                 with st.spinner("AI đang viết bài..."):
                     try:
-                        model = genai.GenerativeModel('gemini-pro')
+                        # Thay đổi model từ gemini-pro sang gemini-1.5-flash
+                        model = genai.GenerativeModel('gemini-1.5-flash')
                         prompt = f"""
                         Hãy đóng vai một chuyên viên truyền thông của cơ quan Bảo hiểm xã hội.
                         Nhiệm vụ: Viết một nội dung tuyên truyền.
