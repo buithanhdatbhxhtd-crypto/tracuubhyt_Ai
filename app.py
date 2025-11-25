@@ -18,6 +18,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- 🔑 CẤU HÌNH API KEY TẠI ĐÂY (DÁN KEY CỦA BẠN VÀO DƯỚI) ---
+# Ví dụ: HARDCODED_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE"
+HARDCODED_API_KEY = "" 
+
 # Tên file
 EXCEL_FILE = 'aaa.xlsb'
 DB_FILE = 'bhxh_data.db'
@@ -64,6 +68,12 @@ def log_action(username, action, details=""):
     except: pass
 
 def configure_gemini():
+    # 1. Ưu tiên key cứng trong code
+    if HARDCODED_API_KEY:
+        genai.configure(api_key=HARDCODED_API_KEY)
+        return True
+
+    # 2. Nếu không có key cứng, thử lấy từ giao diện hoặc secrets
     key = st.secrets.get("GOOGLE_API_KEY", st.session_state.get('user_api_key', ''))
     if key: 
         genai.configure(api_key=key)
@@ -76,6 +86,9 @@ def get_ai_response(prompt, role_desc=""):
     Hàm này sẽ thử các model khác nhau.
     Nếu model mới (1.5) lỗi, nó sẽ tự động dùng model cũ (pro).
     """
+    if not configure_gemini():
+        return "⚠️ Chưa nhập API Key. Vui lòng điền key vào code hoặc nhập trên giao diện."
+
     # Danh sách ưu tiên model
     models_to_try = ['gemini-1.5-flash', 'gemini-pro']
     
@@ -240,11 +253,10 @@ def render_search(cols):
             if not df.empty:
                 st.success(f"Tìm thấy {len(df)} kết quả")
                 st.dataframe(df, use_container_width=True, hide_index=True)
-                if len(df)==1 and configure_gemini():
-                    with st.expander("✨ AI Phân tích hồ sơ"):
+                if len(df)==1:
+                    with st.expander("✨ AI Phân tích hồ sơ", expanded=True):
                         with st.spinner("AI đang đọc dữ liệu..."):
-                            # Dùng hàm get_ai_response thay vì gọi trực tiếp
-                            role = "Bạn là chuyên gia BHXH. Hãy tóm tắt quyền lợi bảo hiểm cho người này dựa trên dữ liệu."
+                            role = "Bạn là chuyên gia BHXH. Hãy tóm tắt quyền lợi bảo hiểm cho người này dựa trên dữ liệu. Trả lời ngắn gọn."
                             res = get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", role)
                             st.write(res)
             else: st.warning("Không tìm thấy kết quả.")
@@ -287,8 +299,9 @@ def render_search(cols):
 def render_chatbot():
     st.subheader("🤖 Trợ lý ảo BHXH/BHYT")
     
-    if not configure_gemini():
-        st.warning("Vui lòng nhập API Key ở thanh bên trái để sử dụng tính năng này.")
+    # Nếu chưa có key cứng và chưa nhập key -> Báo lỗi
+    if not HARDCODED_API_KEY and not st.session_state.get('user_api_key'):
+        st.warning("⚠️ Chưa có API Key. Vui lòng nhập ở thanh bên trái hoặc điền vào code.")
         return
 
     if "messages" not in st.session_state:
@@ -312,17 +325,15 @@ def render_chatbot():
                 Nhiệm vụ của bạn là trả lời các câu hỏi của người dân một cách chính xác, dễ hiểu, trích dẫn luật nếu cần.
                 Hãy giữ thái độ thân thiện, chuyên nghiệp.
                 """
-                # Dùng hàm get_ai_response an toàn
                 response_text = get_ai_response(prompt, role_desc)
                 st.markdown(response_text)
                 st.session_state.messages.append({"role": "model", "content": response_text})
 
 def render_content_creator():
     st.subheader("✍️ Sáng Tạo Nội Dung Tuyên Truyền")
-    st.caption("Công cụ hỗ trợ viết bài đăng Facebook, Zalo, Thông báo cổ động.")
-
-    if not configure_gemini():
-        st.warning("Vui lòng nhập API Key để sử dụng.")
+    
+    if not HARDCODED_API_KEY and not st.session_state.get('user_api_key'):
+        st.warning("⚠️ Chưa có API Key.")
         return
 
     col1, col2 = st.columns([1, 1])
@@ -338,7 +349,6 @@ def render_content_creator():
                     role = "Bạn là chuyên viên truyền thông BHXH."
                     prompt = f"Viết nội dung về: {topic}. Đối tượng: {target_audience}. Dạng: {content_type}. Yêu cầu: Hấp dẫn, chuẩn mực, có emoji và hashtag."
                     
-                    # Dùng hàm get_ai_response an toàn
                     res = get_ai_response(prompt, role)
                     st.session_state['generated_content'] = res
             else:
@@ -430,9 +440,11 @@ def main():
                 if st.button("🛠️ Quản trị hệ thống", use_container_width=True): st.session_state['page'] = 'admin'
             
             st.markdown("---")
-            with st.expander("🔑 Cấu hình AI Key"):
-                k = st.text_input("Google API Key", type="password", value=st.session_state.get('user_api_key',''))
-                if k: st.session_state['user_api_key'] = k
+            # Chỉ hiện ô nhập nếu chưa có key cứng
+            if not HARDCODED_API_KEY:
+                with st.expander("🔑 Cấu hình AI Key"):
+                    k = st.text_input("Google API Key", type="password", value=st.session_state.get('user_api_key',''))
+                    if k: st.session_state['user_api_key'] = k
 
             if st.button("Đăng xuất", use_container_width=True):
                 log_action(st.session_state['username'], "Logout")
