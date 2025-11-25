@@ -18,8 +18,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 🔑 CẤU HÌNH API KEY TẠI ĐÂY (DÁN KEY CỦA BẠN VÀO DƯỚI) ---
-# Ví dụ: HARDCODED_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE"
+# --- 🔑 DÁN KHÓA API CỦA BẠN VÀO GIỮA 2 DẤU NGOẶC KÉP BÊN DƯỚI ---
+# Ví dụ: HARDCODED_API_KEY = "AIzaSyDxxxx..."
 HARDCODED_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE" 
 
 # Tên file
@@ -68,44 +68,50 @@ def log_action(username, action, details=""):
     except: pass
 
 def configure_gemini():
-    # 1. Ưu tiên key cứng trong code
+    # 1. Ưu tiên key cứng
     if HARDCODED_API_KEY:
         genai.configure(api_key=HARDCODED_API_KEY)
         return True
 
-    # 2. Nếu không có key cứng, thử lấy từ giao diện hoặc secrets
+    # 2. Key từ giao diện
     key = st.secrets.get("GOOGLE_API_KEY", st.session_state.get('user_api_key', ''))
     if key: 
         genai.configure(api_key=key)
         return True
     return False
 
-# --- HÀM GỌI AI AN TOÀN (FALLBACK MECHANISM) ---
+# --- HÀM AI THÔNG MINH (TỰ ĐỘNG TÌM MODEL) ---
 def get_ai_response(prompt, role_desc=""):
     """
-    Hàm này sẽ thử các model khác nhau.
-    Nếu model mới (1.5) lỗi, nó sẽ tự động dùng model cũ (pro).
+    Tự động thử danh sách các model, cái nào chạy được thì dùng.
+    Không bao giờ lo lỗi 404 Model Not Found.
     """
     if not configure_gemini():
-        return "⚠️ Chưa nhập API Key. Vui lòng điền key vào code hoặc nhập trên giao diện."
+        return "⚠️ Chưa có API Key. Vui lòng nhập Key trong code hoặc trên menu."
 
-    # Danh sách ưu tiên model
-    models_to_try = ['gemini-1.5-flash', 'gemini-pro']
+    # Danh sách các model để thử (từ mới nhất đến cũ nhất)
+    models_to_try = [
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
+        'gemini-1.0-pro',
+        'gemini-pro'
+    ]
+    
+    last_error = ""
     
     for model_name in models_to_try:
         try:
             model = genai.GenerativeModel(model_name)
             full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
+            # Thử gọi API
             response = model.generate_content(full_prompt)
             return response.text
         except Exception as e:
-            # Nếu đây là model cuối cùng mà vẫn lỗi thì mới báo lỗi ra ngoài
-            if model_name == models_to_try[-1]:
-                return f"⚠️ Hệ thống AI đang bận hoặc gặp lỗi: {str(e)}"
-            # Nếu chưa phải cuối cùng, thử model tiếp theo (Silent retry)
+            # Nếu lỗi, lưu lại và thử model tiếp theo
+            last_error = str(e)
             continue
             
-    return "Không thể kết nối tới AI."
+    return f"⚠️ Hệ thống AI đang bận hoặc Key lỗi. Chi tiết: {last_error}"
 
 # --- 2. XỬ LÝ DỮ LIỆU ---
 def clean_text(text):
@@ -130,7 +136,7 @@ def check_and_prepare_data():
     parts = sorted(glob.glob(f"{ZIP_PART_PREFIX}*"))
     if parts:
         msg = st.empty()
-        msg.info(f"📦 Tìm thấy {len(parts)} phần dữ liệu. Đang ghép nối...")
+        msg.info(f"📦 Đang ghép nối dữ liệu ({len(parts)} phần)...")
         try:
             full_zip = "bhxh_data_full.zip"
             with open(full_zip, 'wb') as outfile:
@@ -138,14 +144,14 @@ def check_and_prepare_data():
                     with open(part, 'rb') as infile:
                         outfile.write(infile.read())
             
-            msg.info("📦 Đang giải nén dữ liệu...")
+            msg.info("📦 Đang giải nén...")
             with zipfile.ZipFile(full_zip, 'r') as zip_ref:
                 zip_ref.extractall()
             
             if os.path.exists(full_zip): os.remove(full_zip)
             
-            msg.success("✅ Đã khôi phục dữ liệu thành công!")
-            time.sleep(1)
+            msg.success("✅ Xong!")
+            time.sleep(0.5)
             msg.empty()
             return True, "Restored"
         except Exception as e:
@@ -154,16 +160,16 @@ def check_and_prepare_data():
     if os.path.exists(EXCEL_FILE):
         return import_excel_to_sqlite()
 
-    return False, "⚠️ Không tìm thấy dữ liệu. Hãy upload các file bhxh_data.zip.001... lên GitHub"
+    return False, "⚠️ Không tìm thấy dữ liệu."
 
 def import_excel_to_sqlite():
-    st.warning("⚠️ Đang nạp trực tiếp từ Excel. Khuyên dùng tool 'local_converter.py' để tối ưu.")
+    st.warning("⚠️ Đang nạp từ Excel (Chậm). Nên dùng tool chia nhỏ file.")
     conn = init_data_db()
     msg = st.empty(); bar = st.progress(0)
     try:
         msg.info(f"⏳ Đang xử lý '{EXCEL_FILE}'...")
         df = pd.read_excel(EXCEL_FILE, engine='pyxlsb')
-        bar.progress(40)
+        bar.progress(30)
         
         df.columns = [unidecode.unidecode(str(c)).strip().replace(' ', '_').lower() for c in df.columns]
         df = df.astype(str).replace(['nan', 'None', 'NaT'], '')
@@ -255,11 +261,11 @@ def render_search(cols):
                 st.dataframe(df, use_container_width=True, hide_index=True)
                 if len(df)==1:
                     with st.expander("✨ AI Phân tích hồ sơ", expanded=True):
-                        with st.spinner("AI đang đọc dữ liệu..."):
-                            role = "Bạn là chuyên gia BHXH. Hãy tóm tắt quyền lợi bảo hiểm cho người này dựa trên dữ liệu. Trả lời ngắn gọn."
+                        with st.spinner("AI đang đọc..."):
+                            role = "Bạn là chuyên gia BHXH. Tóm tắt quyền lợi từ dữ liệu này. Trả lời ngắn gọn."
                             res = get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", role)
                             st.write(res)
-            else: st.warning("Không tìm thấy kết quả.")
+            else: st.warning("Không tìm thấy.")
 
     with tab2:
         priority_cols = ['sobhxh', 'hoten', 'ngaysinh', 'socmnd']
@@ -299,122 +305,78 @@ def render_search(cols):
 def render_chatbot():
     st.subheader("🤖 Trợ lý ảo BHXH/BHYT")
     
-    # Nếu chưa có key cứng và chưa nhập key -> Báo lỗi
     if not HARDCODED_API_KEY and not st.session_state.get('user_api_key'):
-        st.warning("⚠️ Chưa có API Key. Vui lòng nhập ở thanh bên trái hoặc điền vào code.")
+        st.warning("⚠️ Chưa có API Key.")
         return
 
     if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "model", "content": "Chào bạn! Tôi là trợ lý ảo chuyên về BHXH, BHYT. Bạn cần tôi giúp gì hôm nay?"}
-        ]
+        st.session_state.messages = [{"role": "model", "content": "Chào bạn! Tôi có thể giúp gì về BHXH/BHYT?"}]
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
+    if prompt := st.chat_input("Nhập câu hỏi..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        with st.chat_message("user"): st.markdown(prompt)
 
         with st.chat_message("model"):
-            with st.spinner("Đang suy nghĩ..."):
-                role_desc = """
-                Bạn là một chuyên gia tư vấn về Bảo hiểm xã hội (BHXH) và Bảo hiểm y tế (BHYT) tại Việt Nam. 
-                Nhiệm vụ của bạn là trả lời các câu hỏi của người dân một cách chính xác, dễ hiểu, trích dẫn luật nếu cần.
-                Hãy giữ thái độ thân thiện, chuyên nghiệp.
-                """
-                response_text = get_ai_response(prompt, role_desc)
-                st.markdown(response_text)
-                st.session_state.messages.append({"role": "model", "content": response_text})
+            with st.spinner("..."):
+                role = "Bạn là chuyên gia tư vấn BHXH/BHYT Việt Nam. Trả lời thân thiện, chính xác."
+                res = get_ai_response(prompt, role)
+                st.markdown(res)
+                st.session_state.messages.append({"role": "model", "content": res})
 
 def render_content_creator():
-    st.subheader("✍️ Sáng Tạo Nội Dung Tuyên Truyền")
+    st.subheader("✍️ Sáng Tạo Nội Dung")
     
     if not HARDCODED_API_KEY and not st.session_state.get('user_api_key'):
         st.warning("⚠️ Chưa có API Key.")
         return
 
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        topic = st.text_input("Chủ đề bài viết:", placeholder="Ví dụ: Lợi ích của BHXH tự nguyện")
-        target_audience = st.selectbox("Đối tượng:", ["Người lao động tự do", "Học sinh sinh viên", "Người cao tuổi", "Doanh nghiệp", "Toàn dân"])
-        content_type = st.selectbox("Loại nội dung:", ["Bài đăng Facebook (Vui vẻ)", "Thông báo hành chính", "Khẩu hiệu cổ động", "Kịch bản tư vấn"])
+    c1, c2 = st.columns(2)
+    with c1:
+        topic = st.text_input("Chủ đề:", placeholder="Vd: Lợi ích BHXH tự nguyện")
+        target = st.selectbox("Đối tượng:", ["Người lao động", "Sinh viên", "Người cao tuổi", "Toàn dân"])
+        ctype = st.selectbox("Loại:", ["Bài đăng Facebook", "Thông báo", "Khẩu hiệu", "Kịch bản"])
         
         if st.button("✨ Tạo nội dung", type="primary"):
             if topic:
-                with st.spinner("AI đang viết bài..."):
+                with st.spinner("Đang viết..."):
                     role = "Bạn là chuyên viên truyền thông BHXH."
-                    prompt = f"Viết nội dung về: {topic}. Đối tượng: {target_audience}. Dạng: {content_type}. Yêu cầu: Hấp dẫn, chuẩn mực, có emoji và hashtag."
-                    
+                    prompt = f"Viết về: {topic}. Cho: {target}. Dạng: {ctype}. Yêu cầu: Hấp dẫn, có emoji."
                     res = get_ai_response(prompt, role)
-                    st.session_state['generated_content'] = res
-            else:
-                st.warning("Vui lòng nhập chủ đề.")
+                    st.session_state['content'] = res
+            else: st.warning("Nhập chủ đề.")
 
-    with col2:
+    with c2:
         st.write("### Kết quả:")
-        if 'generated_content' in st.session_state:
-            st.text_area("Nội dung đã tạo (Copy để dùng):", value=st.session_state['generated_content'], height=400)
-        else:
-            st.info("Kết quả sẽ hiển thị tại đây sau khi bạn bấm nút Tạo.")
+        if 'content' in st.session_state:
+            st.text_area("Nội dung:", value=st.session_state['content'], height=400)
 
 def render_admin():
-    st.header("🛠️ Quản Trị Hệ Thống")
+    st.header("🛠️ Quản Trị")
     conn = init_user_db()
-    
-    if st.button("🧹 Xóa Cache & Reset Ứng Dụng"):
-        st.cache_data.clear()
-        st.rerun()
+    if st.button("🧹 Xóa Cache"): st.cache_data.clear(); st.rerun()
 
-    t1, t2 = st.tabs(["👥 Quản lý Người dùng", "📜 Nhật ký Hoạt động"])
-    
+    t1, t2 = st.tabs(["Người dùng", "Nhật ký"])
     with t1:
-        st.subheader("Danh sách tài khoản")
-        users_df = pd.read_sql("SELECT username, role FROM users", conn)
-        st.dataframe(users_df, use_container_width=True, hide_index=True)
-        st.divider()
-        
-        c_add, c_del = st.columns(2)
-        with c_add:
-            st.write("##### ➕ Thêm User Mới")
-            with st.form("add_user_form", clear_on_submit=True):
-                new_u = st.text_input("Username")
-                new_p = st.text_input("Password", type="password")
-                new_r = st.selectbox("Quyền hạn", ["user", "admin"])
-                if st.form_submit_button("Tạo tài khoản"):
-                    if new_u and new_p:
-                        try:
-                            conn.execute("INSERT INTO users VALUES (?,?,?)", (new_u, make_hashes(new_p), new_r))
-                            conn.commit()
-                            st.success(f"Đã tạo user: {new_u}")
-                            log_action(st.session_state['username'], "Add User", new_u)
-                            time.sleep(1); st.rerun()
-                        except: st.error("Tên đã tồn tại!")
-                    else: st.warning("Nhập thiếu thông tin.")
-
-        with c_del:
-            st.write("##### 🗑️ Xóa User")
-            user_list = [u for u in users_df['username'] if u != 'admin']
-            if user_list:
-                user_to_del = st.selectbox("Chọn user cần xóa:", user_list)
-                if st.button("Xóa vĩnh viễn", type="primary"):
-                    conn.execute("DELETE FROM users WHERE username=?", (user_to_del,))
-                    conn.commit()
-                    st.success(f"Đã xóa user: {user_to_del}")
-                    log_action(st.session_state['username'], "Delete User", user_to_del)
-                    time.sleep(1); st.rerun()
-            else: st.info("Không có tài khoản phụ.")
+        st.dataframe(pd.read_sql("SELECT username, role FROM users", conn), use_container_width=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            with st.form("add"):
+                u = st.text_input("User"); p = st.text_input("Pass", type="password"); r = st.selectbox("Quyền", ["user", "admin"])
+                if st.form_submit_button("Tạo"):
+                    try: conn.execute("INSERT INTO users VALUES (?,?,?)", (u, make_hashes(p), r)); conn.commit(); st.success("OK"); st.rerun()
+                    except: st.error("Trùng tên")
+        with c2:
+            us = [x[0] for x in conn.execute("SELECT username FROM users WHERE username != 'admin'").fetchall()]
+            ud = st.selectbox("Xóa User", us) if us else None
+            if ud and st.button("Xóa"): conn.execute("DELETE FROM users WHERE username=?", (ud,)); conn.commit(); st.success("Xóa xong"); st.rerun()
 
     with t2:
-        st.subheader("Lịch sử truy cập")
-        if st.button("Xóa toàn bộ Nhật ký"):
-            conn.execute("DELETE FROM logs")
-            conn.commit(); st.success("Đã dọn dẹp!"); st.rerun()
-        logs_df = pd.read_sql("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 500", conn)
-        st.dataframe(logs_df, use_container_width=True, hide_index=True)
+        if st.button("Xóa Nhật ký"): conn.execute("DELETE FROM logs"); conn.commit(); st.rerun()
+        st.dataframe(pd.read_sql("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 500", conn), use_container_width=True)
     conn.close()
 
 # --- MAIN ---
@@ -428,22 +390,20 @@ def main():
         render_login()
     else:
         with st.sidebar:
-            st.title(f"Xin chào, {st.session_state['username']}")
-            
+            st.title(f"Hi, {st.session_state['username']}")
             st.markdown("---")
-            if st.button("🔍 Tra cứu Dữ liệu", use_container_width=True): st.session_state['page'] = 'search'
-            if st.button("🤖 Chatbot Tư vấn", use_container_width=True): st.session_state['page'] = 'chatbot'
-            if st.button("✍️ Tạo bài Tuyên truyền", use_container_width=True): st.session_state['page'] = 'content_creator'
+            if st.button("🔍 Tra cứu", use_container_width=True): st.session_state['page'] = 'search'
+            if st.button("🤖 Chatbot", use_container_width=True): st.session_state['page'] = 'chatbot'
+            if st.button("✍️ Tạo nội dung", use_container_width=True): st.session_state['page'] = 'content'
             
             if st.session_state['role'] == 'admin':
                 st.markdown("---")
-                if st.button("🛠️ Quản trị hệ thống", use_container_width=True): st.session_state['page'] = 'admin'
+                if st.button("🛠️ Quản trị", use_container_width=True): st.session_state['page'] = 'admin'
             
             st.markdown("---")
-            # Chỉ hiện ô nhập nếu chưa có key cứng
             if not HARDCODED_API_KEY:
-                with st.expander("🔑 Cấu hình AI Key"):
-                    k = st.text_input("Google API Key", type="password", value=st.session_state.get('user_api_key',''))
+                with st.expander("🔑 API Key"):
+                    k = st.text_input("Key", type="password", value=st.session_state.get('user_api_key',''))
                     if k: st.session_state['user_api_key'] = k
 
             if st.button("Đăng xuất", use_container_width=True):
@@ -452,14 +412,12 @@ def main():
                 st.rerun()
 
         cols = get_display_columns()
-        page = st.session_state['page']
-        
-        if page == 'search': render_search(cols)
-        elif page == 'chatbot': render_chatbot()
-        elif page == 'content_creator': render_content_creator()
-        elif page == 'admin': render_admin()
+        p = st.session_state['page']
+        if p == 'search': render_search(cols)
+        elif p == 'chatbot': render_chatbot()
+        elif p == 'content': render_content_creator()
+        elif p == 'admin': render_admin()
 
 if __name__ == '__main__':
     init_user_db()
     main()
-
