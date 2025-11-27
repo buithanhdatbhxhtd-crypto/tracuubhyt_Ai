@@ -34,30 +34,32 @@ import json
 
 # --- CẤU HÌNH ỨNG DỤNG ---
 st.set_page_config(
-    page_title="Cổng Thông Tin BHXH Thông Minh",
+    page_title="Cổng Thông Tin BHXH Số",
     page_icon="🇻🇳",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ==============================================================================
-# 🎨 GIAO DIỆN & CSS (NÂNG CẤP VISUAL)
+# 🎨 GIAO DIỆN SIÊU CẤP (GLASSMORPHISM & BRANDING)
 # ==============================================================================
 def inject_custom_css():
     st.markdown("""
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+
         /* 1. Hình nền Logo BHXH mờ toàn màn hình */
         .stApp {
-            background-color: #f0f4f8;
+            background-color: #f0f8ff;
             background-image: url("https://upload.wikimedia.org/wikipedia/vi/thumb/9/93/Logo_BHXH_Vi%E1%BB%87t_Nam.svg/1200px-Logo_BHXH_Vi%E1%BB%87t_Nam.svg.png");
             background-repeat: no-repeat;
             background-position: center center;
             background-attachment: fixed;
-            background-size: 60%; /* Độ lớn logo nền */
-            /* Lớp phủ mờ để dễ đọc chữ */
+            background-size: 40%;
+            background-blend-mode: overlay;
         }
         
-        /* Tạo lớp phủ trắng mờ lên nền */
+        /* Lớp phủ trắng mờ để dễ đọc chữ */
         .stApp::before {
             content: "";
             position: absolute;
@@ -65,75 +67,89 @@ def inject_custom_css():
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(255, 255, 255, 0.92); 
+            background: rgba(255, 255, 255, 0.85);
             z-index: -1;
         }
 
-        /* 2. Các khối nội dung (Hiệu ứng kính) */
-        div[data-testid="stVerticalBlock"] > div {
-            background-color: rgba(255, 255, 255, 0.85);
-            padding: 15px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 84, 166, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            backdrop-filter: blur(10px);
+        /* 2. Font chữ chung */
+        html, body, [class*="css"] {
+            font-family: 'Roboto', sans-serif;
+            color: #003366;
         }
 
-        /* 3. Tiêu đề & Màu sắc */
+        /* 3. Hiệu ứng kính (Glassmorphism) cho các khối */
+        div[data-testid="stVerticalBlock"] > div {
+            background: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+
+        /* 4. Tiêu đề (Header) */
         h1, h2, h3 {
             color: #0054a6 !important; /* Xanh BHXH */
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             font-weight: 700;
             text-transform: uppercase;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
         }
-        
-        /* 4. Sidebar đẹp hơn */
+
+        /* 5. Sidebar chuyên nghiệp */
         section[data-testid="stSidebar"] {
-            background-color: #0054a6; /* Nền xanh đậm */
-            background-image: linear-gradient(180deg, #0054a6 0%, #003366 100%);
+            background: linear-gradient(180deg, #0054a6 0%, #003366 100%);
+            box-shadow: 2px 0 10px rgba(0,0,0,0.2);
         }
         section[data-testid="stSidebar"] h1, 
         section[data-testid="stSidebar"] h2, 
-        section[data-testid="stSidebar"] h3, 
-        section[data-testid="stSidebar"] span,
+        section[data-testid="stSidebar"] h3,
         section[data-testid="stSidebar"] label,
-        section[data-testid="stSidebar"] p {
+        section[data-testid="stSidebar"] .stMarkdown p {
             color: white !important;
         }
-
-        /* 5. Nút bấm (Button) */
+        
+        /* 6. Nút bấm (Gradient Button) */
         .stButton > button {
-            background: linear-gradient(45deg, #0054a6, #0078d4);
+            background: linear-gradient(90deg, #0054a6 0%, #0078d4 100%);
             color: white;
+            font-weight: bold;
             border: none;
             border-radius: 8px;
-            padding: 0.5rem 1rem;
-            font-weight: bold;
-            transition: all 0.3s ease;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            padding: 0.6rem 1.2rem;
+            transition: all 0.3s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             width: 100%;
         }
         .stButton > button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 84, 166, 0.3);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+            background: linear-gradient(90deg, #004282 0%, #005a9e 100%);
         }
 
-        /* 6. Input Fields */
-        .stTextInput > div > div > input {
+        /* 7. Ô nhập liệu (Input) */
+        .stTextInput input, .stSelectbox div[data-baseweb="select"] {
             border-radius: 8px;
-            border: 1px solid #cce3f5;
-            background-color: #f9fbfe;
+            border: 1px solid #a0c4e8;
+            background-color: rgba(255, 255, 255, 0.9);
         }
-        .stTextInput > div > div > input:focus {
+        .stTextInput input:focus, .stSelectbox div[data-baseweb="select"]:focus-within {
             border-color: #0054a6;
             box-shadow: 0 0 0 2px rgba(0, 84, 166, 0.2);
         }
 
-        /* 7. Bảng dữ liệu */
-        .stDataFrame {
+        /* 8. Bảng dữ liệu (DataFrame) */
+        div[data-testid="stDataFrame"] {
             border-radius: 10px;
-            overflow: hidden;
             border: 1px solid #e0e0e0;
+            overflow: hidden;
+        }
+        
+        /* 9. Thông báo (Toast/Alert) */
+        .stAlert {
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         }
     </style>
     """, unsafe_allow_html=True)
@@ -325,17 +341,23 @@ def check_data():
         try: 
             c=init_data_db(); c.execute("SELECT count(*) FROM bhxh"); c.close(); return True, "OK"
         except: os.remove(DB_FILE)
+    
     parts = sorted(glob.glob(f"{ZIP_PART_PREFIX}*"))
     if parts:
         msg = st.empty(); msg.info(f"📦 Đang nối {len(parts)} phần dữ liệu...")
         try:
             with open("bhxh_full.zip", 'wb') as o:
-                for p in parts: with open(p, 'rb') as i: o.write(i.read())
+                # SỬA LỖI CÚ PHÁP TẠI ĐÂY (Đã tách dòng)
+                for p in parts: 
+                    with open(p, 'rb') as i: 
+                        o.write(i.read())
+            
             msg.info("📦 Đang giải nén..."); 
             with zipfile.ZipFile("bhxh_full.zip", 'r') as z: z.extractall()
             if os.path.exists("bhxh_full.zip"): os.remove("bhxh_full.zip")
             msg.empty(); return True, "Restored"
         except Exception as e: return False, str(e)
+    
     if os.path.exists(EXCEL_FILE): return import_excel_to_sqlite()
     return False, "Thiếu dữ liệu"
 
