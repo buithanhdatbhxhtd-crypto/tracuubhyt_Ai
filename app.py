@@ -46,19 +46,18 @@ st.set_page_config(
 def inject_custom_css():
     st.markdown("""
     <style>
-        /* 1. Hình nền Logo BHXH mờ */
+        /* 1. Hình nền Logo BHXH mờ toàn màn hình */
         .stApp {
-            background-color: #f4f8fb; /* Màu nền xanh nhạt dịu mắt */
+            background-color: #f0f4f8;
             background-image: url("https://upload.wikimedia.org/wikipedia/vi/thumb/9/93/Logo_BHXH_Vi%E1%BB%87t_Nam.svg/1200px-Logo_BHXH_Vi%E1%BB%87t_Nam.svg.png");
             background-repeat: no-repeat;
             background-position: center center;
             background-attachment: fixed;
-            background-size: 50%; /* Kích thước logo nền */
-            background-blend-mode: overlay;
-            /* Làm mờ logo nền để không rối mắt */
+            background-size: 60%; /* Độ lớn logo nền */
+            /* Lớp phủ mờ để dễ đọc chữ */
         }
         
-        /* Lớp phủ trắng mờ lên toàn bộ app để text dễ đọc hơn trên nền logo */
+        /* Tạo lớp phủ trắng mờ lên nền */
         .stApp::before {
             content: "";
             position: absolute;
@@ -66,33 +65,36 @@ def inject_custom_css():
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(255, 255, 255, 0.85); 
+            background-color: rgba(255, 255, 255, 0.92); 
             z-index: -1;
         }
 
-        /* 2. Style cho các khối nội dung (Card) */
+        /* 2. Các khối nội dung (Hiệu ứng kính) */
         div[data-testid="stVerticalBlock"] > div {
-            background-color: rgba(255, 255, 255, 0.9);
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0, 84, 166, 0.1); /* Bóng xanh nhẹ */
+            background-color: rgba(255, 255, 255, 0.85);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 84, 166, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.6);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.5);
         }
 
-        /* 3. Tiêu đề & Text */
+        /* 3. Tiêu đề & Màu sắc */
         h1, h2, h3 {
-            color: #0054a6 !important; /* Màu xanh thương hiệu BHXH */
-            font-family: 'Arial', sans-serif;
+            color: #0054a6 !important; /* Xanh BHXH */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             font-weight: 700;
-            text-shadow: 1px 1px 0px rgba(255,255,255,1);
+            text-transform: uppercase;
         }
         
-        /* 4. Sidebar */
+        /* 4. Sidebar đẹp hơn */
         section[data-testid="stSidebar"] {
-            background-color: #0054a6; /* Sidebar màu xanh đậm */
+            background-color: #0054a6; /* Nền xanh đậm */
+            background-image: linear-gradient(180deg, #0054a6 0%, #003366 100%);
         }
         section[data-testid="stSidebar"] h1, 
+        section[data-testid="stSidebar"] h2, 
+        section[data-testid="stSidebar"] h3, 
         section[data-testid="stSidebar"] span,
         section[data-testid="stSidebar"] label,
         section[data-testid="stSidebar"] p {
@@ -101,25 +103,26 @@ def inject_custom_css():
 
         /* 5. Nút bấm (Button) */
         .stButton > button {
-            background: linear-gradient(90deg, #0054a6 0%, #0078d4 100%);
+            background: linear-gradient(45deg, #0054a6, #0078d4);
             color: white;
             border: none;
             border-radius: 8px;
-            padding: 10px 24px;
+            padding: 0.5rem 1rem;
             font-weight: bold;
             transition: all 0.3s ease;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            width: 100%;
         }
         .stButton > button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 84, 166, 0.4);
-            background: linear-gradient(90deg, #004282 0%, #005a9e 100%);
+            box-shadow: 0 5px 15px rgba(0, 84, 166, 0.3);
         }
 
-        /* 6. Input fields */
+        /* 6. Input Fields */
         .stTextInput > div > div > input {
             border-radius: 8px;
-            border: 1px solid #c0d4ea;
+            border: 1px solid #cce3f5;
+            background-color: #f9fbfe;
         }
         .stTextInput > div > div > input:focus {
             border-color: #0054a6;
