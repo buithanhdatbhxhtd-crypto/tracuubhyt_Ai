@@ -24,7 +24,7 @@ st.set_page_config(
 # ==============================================================================
 # 🔑 API KEY AI (DÁN KEY CỦA BẠN VÀO DƯỚI)
 # ==============================================================================
-HARDCODED_API_KEY = "AIzaSyBd6MNZdWTsJiTy1yrrWK4G2PsltqFV6eg" 
+HARDCODED_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE" 
 
 # Tên file dữ liệu
 EXCEL_FILE = 'aaa.xlsb'
@@ -36,19 +36,12 @@ ZIP_PART_PREFIX = 'bhxh_data.zip.'
 def get_firestore_db():
     """Kết nối đến Google Firestore qua Secrets"""
     try:
-        # Kiểm tra xem có secrets chưa
         if "gcp_service_account" in st.secrets:
-            # Chuyển đổi từ TOML object sang dict chuẩn Python
             key_dict = dict(st.secrets["gcp_service_account"])
-            
-            # Xử lý private_key: Streamlit tự xử lý \n, nhưng cẩn thận vẫn tốt hơn
-            # key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n") 
-            
             creds = service_account.Credentials.from_service_account_info(key_dict)
             db = firestore.Client(credentials=creds, project=key_dict["project_id"])
             return db
         else:
-            st.error("⚠️ Chưa cấu hình Secrets cho Firebase. Vui lòng kiểm tra cài đặt trên Streamlit Cloud.")
             return None
     except Exception as e:
         st.error(f"❌ Lỗi kết nối Database Online: {e}")
@@ -64,7 +57,7 @@ def create_user(username, password, role):
     
     doc_ref = db.collection("users").document(username)
     if doc_ref.get().exists:
-        return False # User đã tồn tại
+        return False 
     
     doc_ref.set({
         "password": make_hashes(password),
@@ -106,27 +99,49 @@ def get_all_users():
     except: pass
     return pd.DataFrame(users)
 
-# --- QUẢN LÝ LOGS (CLOUD) ---
+# --- QUẢN LÝ LOGS (CLOUD) - CẬP NHẬT GIỜ VIỆT NAM ---
 def log_action(username, action, details=""):
     try:
         db = get_firestore_db()
         if db:
+            # Lấy giờ UTC hiện tại + 7 tiếng = Giờ Việt Nam
+            vn_timezone = datetime.timezone(datetime.timedelta(hours=7))
+            now_vn = datetime.datetime.now(vn_timezone)
+            timestamp_str = now_vn.strftime("%Y-%m-%d %H:%M:%S")
+            
             db.collection("logs").add({
-                "timestamp": datetime.datetime.now(),
+                "timestamp": timestamp_str, # Lưu dạng chuỗi để dễ đọc
+                "sort_time": firestore.SERVER_TIMESTAMP, # Lưu dạng time để sort
                 "username": username,
                 "action": action,
                 "details": str(details)
             })
-    except: pass
+    except Exception as e: 
+        print(f"Log Error: {e}")
 
 def get_logs(limit=100):
     db = get_firestore_db()
     if not db: return pd.DataFrame()
     try:
-        logs_ref = db.collection("logs").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
-        logs = [doc.to_dict() for doc in logs_ref.stream()]
-        return pd.DataFrame(logs)
-    except: return pd.DataFrame()
+        # Sắp xếp theo thời gian thực (mới nhất lên đầu)
+        logs_ref = db.collection("logs").order_by("sort_time", direction=firestore.Query.DESCENDING).limit(limit)
+        
+        data = []
+        for doc in logs_ref.stream():
+            d = doc.to_dict()
+            # Chỉ lấy các cột cần thiết để hiển thị
+            row = {
+                "Thời gian (VN)": d.get("timestamp", ""),
+                "Người dùng": d.get("username", ""),
+                "Hành động": d.get("action", ""),
+                "Chi tiết": d.get("details", "")
+            }
+            data.append(row)
+            
+        return pd.DataFrame(data)
+    except Exception as e: 
+        st.error(f"Lỗi tải logs: {e}")
+        return pd.DataFrame()
 
 # --- KHỞI TẠO ADMIN ---
 def init_cloud_admin():
@@ -246,7 +261,6 @@ def search_data(mode, q):
 def render_login():
     st.markdown("<h2 style='text-align: center;'>🔐 Đăng Nhập Hệ Thống</h2>", unsafe_allow_html=True)
     
-    # Kiểm tra kết nối DB Cloud trước khi cho đăng nhập
     if not get_firestore_db():
         st.error("❌ Lỗi kết nối Database Đám Mây. Vui lòng kiểm tra Secrets.")
         return
@@ -260,7 +274,7 @@ def render_login():
                 role = verify_login(u, p)
                 if role:
                     st.session_state.update({'logged_in': True, 'username': u, 'role': role})
-                    log_action(u, "Login", "Thành công")
+                    log_action(u, "Login", "Đăng nhập thành công")
                     st.rerun()
                 else: st.error("Sai thông tin đăng nhập")
 
@@ -271,6 +285,9 @@ def render_search(cols):
         st.caption("Nhập tên, số thẻ, ngày sinh...")
         q = st.text_input("Từ khóa:", placeholder="vd: nguyen van a 1990")
         if q:
+            # GHI NHẬT KÝ TÌM KIẾM AI
+            log_action(st.session_state['username'], "Search AI", f"Từ khóa: {q}")
+            
             df = search_data('ai', q)
             if not df.empty:
                 st.success(f"Tìm thấy {len(df)} kết quả")
@@ -299,6 +316,9 @@ def render_search(cols):
         if st.button("🔍 Tìm kiếm", type="primary"):
             valid = {k: v for k, v in inputs.items() if v.strip()}
             if valid:
+                # GHI NHẬT KÝ TÌM KIẾM THỦ CÔNG
+                log_action(st.session_state['username'], "Search Manual", str(valid))
+                
                 df = search_data('manual', valid)
                 if not df.empty:
                     st.success(f"Tìm thấy {len(df)} kết quả")
@@ -313,6 +333,9 @@ def render_chatbot():
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.markdown(m["content"])
     if prompt := st.chat_input("Hỏi gì đó..."):
+        # GHI NHẬT KÝ CHAT
+        log_action(st.session_state['username'], "Chatbot Query", prompt)
+        
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
         with st.chat_message("model"):
@@ -335,6 +358,9 @@ def render_content():
     with c1:
         topic = st.text_input("Chủ đề:")
         if st.button("Viết bài", type="primary") and topic:
+            # GHI NHẬT KÝ TẠO NỘI DUNG
+            log_action(st.session_state['username'], "Content Creator", f"Chủ đề: {topic}")
+            
             with st.spinner("Đang viết..."):
                 st.session_state['content'] = get_ai_response(f"Viết bài tuyên truyền về: {topic}", "Chuyên viên truyền thông")
     with c2:
@@ -348,16 +374,24 @@ def render_admin():
         with st.form("add"):
             u = st.text_input("User"); p = st.text_input("Pass", type='password'); r = st.selectbox("Quyền", ["user", "admin"])
             if st.form_submit_button("Tạo User"):
-                if create_user(u, p, r): st.success("Thành công!"); time.sleep(1); st.rerun()
+                if create_user(u, p, r): 
+                    st.success("Thành công!")
+                    log_action(st.session_state['username'], "Admin: Add User", u)
+                    time.sleep(1); st.rerun()
                 else: st.error("Tên đã tồn tại")
         
         with st.expander("Xóa User"):
             u_del = st.text_input("Nhập username cần xóa:")
             if st.button("Xóa"):
-                if u_del != "admin" and delete_user_cloud(u_del): st.success("Đã xóa"); time.sleep(1); st.rerun()
+                if u_del != "admin" and delete_user_cloud(u_del): 
+                    st.success("Đã xóa")
+                    log_action(st.session_state['username'], "Admin: Delete User", u_del)
+                    time.sleep(1); st.rerun()
                 else: st.error("Không thể xóa hoặc không tồn tại")
 
     with t2:
+        st.write("Nhật ký hoạt động (Giờ Việt Nam):")
+        if st.button("Tải lại Logs"): st.rerun()
         st.dataframe(get_logs(200), use_container_width=True)
 
 def main():
@@ -378,7 +412,8 @@ def main():
                 if st.button("🛠️ Quản trị", use_container_width=True): st.session_state['page'] = 'admin'
             st.divider()
             if st.button("Đăng xuất", use_container_width=True):
-                log_action(st.session_state['username'], "Logout"); st.session_state['logged_in'] = False; st.rerun()
+                log_action(st.session_state['username'], "Logout")
+                st.session_state['logged_in'] = False; st.rerun()
         
         cols = get_display_columns()
         p = st.session_state['page']
