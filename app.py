@@ -21,7 +21,7 @@ st.set_page_config(
 # ==============================================================================
 # 🔑 API KEY CỦA BẠN (ĐÃ ĐIỀN SẴN)
 # ==============================================================================
-HARDCODED_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE"
+HARDCODED_API_KEY = "AIzaSyBd6MNZdWTsJiTy1yrrWK4G2PsltqFV6eg"
 # ==============================================================================
 
 # Tên file
@@ -405,3 +405,4 @@ def main():
         elif p == 'admin': render_admin()
 
 if __name__ == '__main__': init_user_db(); main()
+
