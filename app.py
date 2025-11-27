@@ -40,14 +40,17 @@ st.set_page_config(
 HARDCODED_API_KEY = "AIzaSyBd6MNZdWTsJiTy1yrrWK4G2PsltqFV6eg" 
 ZALO_PHONE_NUMBER = "0986053006" 
 
-# CÁC HẰNG SỐ TÍNH BHXH TỰ NGUYỆN (2024-2025)
+# CÁC HẰNG SỐ TÍNH BHXH TỰ NGUYỆN (CẬP NHẬT 2025)
 CHUAN_NGHEO = 1500000 # Mức chuẩn nghèo khu vực nông thôn
 LUONG_CO_SO = 2340000 # Mức lương cơ sở
 MAX_MUC_DONG = 20 * LUONG_CO_SO # Mức đóng tối đa
 TY_LE_DONG = 0.22 # Tỷ lệ đóng 22%
-HO_TRO_NGHEO = 0.30 # Hỗ trợ 30% cho hộ nghèo
-HO_TRO_CAN_NGHEO = 0.25 # Hỗ trợ 25% cho hộ cận nghèo
-HO_TRO_KHAC = 0.10 # Hỗ trợ 10% cho đối tượng khác
+
+# Mức hỗ trợ mới nhất
+HO_TRO_NGHEO = 0.50     # 50%
+HO_TRO_CAN_NGHEO = 0.40 # 40%
+HO_TRO_DAN_TOC = 0.30   # 30%
+HO_TRO_KHAC = 0.20      # 20%
 
 # Tên file
 EXCEL_FILE = 'aaa.xlsb'
@@ -231,13 +234,13 @@ def search_data(mode, q):
     except: return pd.DataFrame()
     finally: conn.close()
 
-# --- TÍNH BHXH TỰ NGUYỆN ---
+# --- TÍNH BHXH TỰ NGUYỆN (CẬP NHẬT 2025) ---
 def format_vnd(value):
     return f"{int(value):,} VNĐ".replace(",", ".")
 
 def render_calculator():
     st.subheader("🧮 Tính Mức Đóng BHXH Tự Nguyện")
-    st.caption("Công cụ ước tính số tiền phải đóng dựa trên mức thu nhập bạn lựa chọn.")
+    st.caption("Công cụ ước tính số tiền đóng BHXH tự nguyện theo quy định mới nhất (2025).")
 
     # 1. Nhập mức thu nhập
     st.markdown("#### 1. Chọn mức thu nhập làm căn cứ đóng")
@@ -264,9 +267,9 @@ def render_calculator():
         st.markdown(
             f"""
             <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 0.9em;">
-            <b>Thông tin tham chiếu (2024):</b><br>
-            - Tối thiểu: {format_vnd(CHUAN_NGHEO)}<br>
-            - Tối đa: {format_vnd(MAX_MUC_DONG)}<br>
+            <b>Thông tin tham chiếu:</b><br>
+            - Chuẩn nghèo: {format_vnd(CHUAN_NGHEO)}<br>
+            - Tối đa (20 lần LCS): {format_vnd(MAX_MUC_DONG)}<br>
             - Tỷ lệ đóng: 22%
             </div>
             """, unsafe_allow_html=True
@@ -276,7 +279,7 @@ def render_calculator():
     st.markdown("#### 2. Chọn đối tượng ưu tiên (để tính mức hỗ trợ)")
     doi_tuong = st.radio(
         "Bạn thuộc đối tượng nào?",
-        ["Khác (Hỗ trợ 10%)", "Hộ nghèo (Hỗ trợ 30%)", "Hộ cận nghèo (Hỗ trợ 25%)"],
+        ["Khác (Hỗ trợ 20%)", "Hộ nghèo (Hỗ trợ 50%)", "Hộ cận nghèo (Hỗ trợ 40%)", "Dân tộc thiểu số (Hỗ trợ 30%)"],
         horizontal=True
     )
 
@@ -284,23 +287,26 @@ def render_calculator():
     # Mức đóng chuẩn (chưa trừ hỗ trợ) = Thu nhập * 22%
     muc_dong_chuan = income * TY_LE_DONG
     
-    # Mức hỗ trợ của nhà nước = Chuẩn nghèo * % Hỗ trợ
+    # Mức hỗ trợ của nhà nước = Chuẩn nghèo * % Hỗ trợ (theo yêu cầu mới)
     if "Hộ nghèo" in doi_tuong:
-        muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_NGHEO # 30% của 22% chuẩn nghèo
-        tile_hotro = "30%"
+        muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_NGHEO
+        tile_hotro = "50%"
     elif "Hộ cận nghèo" in doi_tuong:
-        muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_CAN_NGHEO # 25% của 22% chuẩn nghèo
-        tile_hotro = "25%"
+        muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_CAN_NGHEO
+        tile_hotro = "40%"
+    elif "Dân tộc" in doi_tuong:
+        muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_DAN_TOC
+        tile_hotro = "30%"
     else:
-        muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_KHAC # 10% của 22% chuẩn nghèo
-        tile_hotro = "10%"
+        muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_KHAC
+        tile_hotro = "20%"
 
     # Số tiền thực đóng = Mức đóng chuẩn - Mức hỗ trợ
     so_tien_thuc_dong = muc_dong_chuan - muc_ho_tro
 
     # 3. Hiển thị kết quả (Bảng so sánh các phương thức đóng)
     st.markdown("---")
-    st.markdown("#### 📊 Bảng Chi Tiết Số Tiền Phải Đóng")
+    st.markdown(f"#### 📊 Bảng Chi Tiết Số Tiền Phải Đóng (Hỗ trợ: {tile_hotro})")
     
     # Tạo dữ liệu cho bảng
     data = {
