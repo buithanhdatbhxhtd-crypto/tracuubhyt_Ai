@@ -86,6 +86,19 @@ def delete_user_cloud(username):
         return True
     return False
 
+def update_password(username, new_password):
+    """Cập nhật mật khẩu mới cho user"""
+    db = get_firestore_db()
+    if db:
+        try:
+            db.collection("users").document(username).update({
+                "password": make_hashes(new_password)
+            })
+            return True
+        except:
+            return False
+    return False
+
 def get_all_users():
     db = get_firestore_db()
     if not db: return pd.DataFrame()
@@ -99,7 +112,7 @@ def get_all_users():
     except: pass
     return pd.DataFrame(users)
 
-# --- QUẢN LÝ LOGS (CLOUD) - CẬP NHẬT GIỜ VIỆT NAM ---
+# --- QUẢN LÝ LOGS (CLOUD) ---
 def log_action(username, action, details=""):
     try:
         db = get_firestore_db()
@@ -110,8 +123,8 @@ def log_action(username, action, details=""):
             timestamp_str = now_vn.strftime("%Y-%m-%d %H:%M:%S")
             
             db.collection("logs").add({
-                "timestamp": timestamp_str, # Lưu dạng chuỗi để dễ đọc
-                "sort_time": firestore.SERVER_TIMESTAMP, # Lưu dạng time để sort
+                "timestamp": timestamp_str,
+                "sort_time": firestore.SERVER_TIMESTAMP,
                 "username": username,
                 "action": action,
                 "details": str(details)
@@ -123,13 +136,11 @@ def get_logs(limit=100):
     db = get_firestore_db()
     if not db: return pd.DataFrame()
     try:
-        # Sắp xếp theo thời gian thực (mới nhất lên đầu)
         logs_ref = db.collection("logs").order_by("sort_time", direction=firestore.Query.DESCENDING).limit(limit)
         
         data = []
         for doc in logs_ref.stream():
             d = doc.to_dict()
-            # Chỉ lấy các cột cần thiết để hiển thị
             row = {
                 "Thời gian (VN)": d.get("timestamp", ""),
                 "Người dùng": d.get("username", ""),
@@ -140,7 +151,6 @@ def get_logs(limit=100):
             
         return pd.DataFrame(data)
     except Exception as e: 
-        st.error(f"Lỗi tải logs: {e}")
         return pd.DataFrame()
 
 # --- KHỞI TẠO ADMIN ---
@@ -278,6 +288,34 @@ def render_login():
                     st.rerun()
                 else: st.error("Sai thông tin đăng nhập")
 
+def render_change_password():
+    st.subheader("🔒 Đổi Mật Khẩu")
+    with st.form("change_pass_form"):
+        old_pass = st.text_input("Mật khẩu cũ", type="password")
+        new_pass = st.text_input("Mật khẩu mới", type="password")
+        confirm_pass = st.text_input("Nhập lại mật khẩu mới", type="password")
+        
+        if st.form_submit_button("Đổi Mật Khẩu"):
+            username = st.session_state['username']
+            # Kiểm tra mật khẩu cũ
+            if verify_login(username, old_pass):
+                if new_pass == confirm_pass:
+                    if len(new_pass) >= 6:
+                        if update_password(username, new_pass):
+                            st.success("Đổi mật khẩu thành công! Vui lòng đăng nhập lại.")
+                            log_action(username, "Change Password", "Success")
+                            time.sleep(2)
+                            st.session_state['logged_in'] = False
+                            st.rerun()
+                        else:
+                            st.error("Lỗi hệ thống khi cập nhật mật khẩu.")
+                    else:
+                        st.warning("Mật khẩu mới phải có ít nhất 6 ký tự.")
+                else:
+                    st.error("Mật khẩu mới không khớp.")
+            else:
+                st.error("Mật khẩu cũ không đúng.")
+
 def render_search(cols):
     st.subheader("🔍 Tra Cứu Dữ Liệu")
     tab1, tab2 = st.tabs(["Nhanh (AI)", "Chi tiết (Thủ công)"])
@@ -285,9 +323,7 @@ def render_search(cols):
         st.caption("Nhập tên, số thẻ, ngày sinh...")
         q = st.text_input("Từ khóa:", placeholder="vd: nguyen van a 1990")
         if q:
-            # GHI NHẬT KÝ TÌM KIẾM AI
             log_action(st.session_state['username'], "Search AI", f"Từ khóa: {q}")
-            
             df = search_data('ai', q)
             if not df.empty:
                 st.success(f"Tìm thấy {len(df)} kết quả")
@@ -316,9 +352,7 @@ def render_search(cols):
         if st.button("🔍 Tìm kiếm", type="primary"):
             valid = {k: v for k, v in inputs.items() if v.strip()}
             if valid:
-                # GHI NHẬT KÝ TÌM KIẾM THỦ CÔNG
                 log_action(st.session_state['username'], "Search Manual", str(valid))
-                
                 df = search_data('manual', valid)
                 if not df.empty:
                     st.success(f"Tìm thấy {len(df)} kết quả")
@@ -333,9 +367,7 @@ def render_chatbot():
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.markdown(m["content"])
     if prompt := st.chat_input("Hỏi gì đó..."):
-        # GHI NHẬT KÝ CHAT
         log_action(st.session_state['username'], "Chatbot Query", prompt)
-        
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
         with st.chat_message("model"):
@@ -358,9 +390,7 @@ def render_content():
     with c1:
         topic = st.text_input("Chủ đề:")
         if st.button("Viết bài", type="primary") and topic:
-            # GHI NHẬT KÝ TẠO NỘI DUNG
             log_action(st.session_state['username'], "Content Creator", f"Chủ đề: {topic}")
-            
             with st.spinner("Đang viết..."):
                 st.session_state['content'] = get_ai_response(f"Viết bài tuyên truyền về: {topic}", "Chuyên viên truyền thông")
     with c2:
@@ -371,23 +401,41 @@ def render_admin():
     t1, t2 = st.tabs(["User", "Logs"])
     with t1:
         st.dataframe(get_all_users(), use_container_width=True)
-        with st.form("add"):
-            u = st.text_input("User"); p = st.text_input("Pass", type='password'); r = st.selectbox("Quyền", ["user", "admin"])
-            if st.form_submit_button("Tạo User"):
-                if create_user(u, p, r): 
-                    st.success("Thành công!")
-                    log_action(st.session_state['username'], "Admin: Add User", u)
-                    time.sleep(1); st.rerun()
-                else: st.error("Tên đã tồn tại")
         
-        with st.expander("Xóa User"):
-            u_del = st.text_input("Nhập username cần xóa:")
-            if st.button("Xóa"):
-                if u_del != "admin" and delete_user_cloud(u_del): 
-                    st.success("Đã xóa")
-                    log_action(st.session_state['username'], "Admin: Delete User", u_del)
-                    time.sleep(1); st.rerun()
-                else: st.error("Không thể xóa hoặc không tồn tại")
+        col_add, col_del, col_reset = st.columns(3)
+        
+        with col_add:
+            with st.popover("➕ Thêm User"):
+                with st.form("add_user_form"):
+                    u = st.text_input("User")
+                    p = st.text_input("Pass", type='password')
+                    r = st.selectbox("Quyền", ["user", "admin"])
+                    if st.form_submit_button("Tạo"):
+                        if create_user(u, p, r): 
+                            st.success("Thành công!")
+                            log_action(st.session_state['username'], "Admin: Add User", u)
+                            time.sleep(1); st.rerun()
+                        else: st.error("Tên đã tồn tại")
+        
+        with col_del:
+            with st.popover("🗑️ Xóa User"):
+                u_del = st.text_input("Nhập username cần xóa:")
+                if st.button("Xóa"):
+                    if u_del != "admin" and delete_user_cloud(u_del): 
+                        st.success("Đã xóa")
+                        log_action(st.session_state['username'], "Admin: Delete User", u_del)
+                        time.sleep(1); st.rerun()
+                    else: st.error("Lỗi")
+                    
+        with col_reset:
+            with st.popover("🔄 Reset Mật khẩu"):
+                u_reset = st.text_input("Username cần reset:")
+                if st.button("Reset về 123456"):
+                    if update_password(u_reset, "123456"):
+                        st.success(f"Đã reset pass cho {u_reset}")
+                        log_action(st.session_state['username'], "Admin: Reset Pass", u_reset)
+                    else:
+                        st.error("Không tìm thấy user hoặc lỗi")
 
     with t2:
         st.write("Nhật ký hoạt động (Giờ Việt Nam):")
@@ -407,6 +455,10 @@ def main():
             if st.button("🔍 Tra cứu", use_container_width=True): st.session_state['page'] = 'search'
             if st.button("🤖 Chatbot AI", use_container_width=True): st.session_state['page'] = 'chatbot'
             if st.button("✍️ Tạo nội dung", use_container_width=True): st.session_state['page'] = 'content'
+            
+            st.divider()
+            if st.button("🔒 Đổi mật khẩu", use_container_width=True): st.session_state['page'] = 'change_pass'
+            
             if st.session_state['role'] == 'admin':
                 st.divider(); 
                 if st.button("🛠️ Quản trị", use_container_width=True): st.session_state['page'] = 'admin'
@@ -420,6 +472,7 @@ def main():
         if p == 'search': render_search(cols)
         elif p == 'chatbot': render_chatbot()
         elif p == 'content': render_content()
+        elif p == 'change_pass': render_change_password()
         elif p == 'admin': render_admin()
 
 if __name__ == '__main__':
