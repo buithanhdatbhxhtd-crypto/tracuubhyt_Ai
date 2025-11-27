@@ -24,7 +24,7 @@ st.set_page_config(
 # ==============================================================================
 # 🔑 CẤU HÌNH HỆ THỐNG
 # ==============================================================================
-HARDCODED_API_KEY = "AIzaSyCw8kpB4mr_rw9IAh3-UOoaQfB8y_x16NE" 
+HARDCODED_API_KEY = "AIzaSyBd6MNZdWTsJiTy1yrrWK4G2PsltqFV6eg" 
 ZALO_PHONE_NUMBER = "0986053006" # <--- THAY SỐ ĐIỆN THOẠI ZALO CỦA BẠN VÀO ĐÂY
 
 # Tên file
@@ -485,3 +485,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
