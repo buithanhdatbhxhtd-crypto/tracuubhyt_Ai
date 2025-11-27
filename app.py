@@ -40,6 +40,15 @@ st.set_page_config(
 HARDCODED_API_KEY = "AIzaSyBd6MNZdWTsJiTy1yrrWK4G2PsltqFV6eg" 
 ZALO_PHONE_NUMBER = "0986053006" 
 
+# CÁC HẰNG SỐ TÍNH BHXH TỰ NGUYỆN (2024-2025)
+CHUAN_NGHEO = 1500000 # Mức chuẩn nghèo khu vực nông thôn
+LUONG_CO_SO = 2340000 # Mức lương cơ sở
+MAX_MUC_DONG = 20 * LUONG_CO_SO # Mức đóng tối đa
+TY_LE_DONG = 0.22 # Tỷ lệ đóng 22%
+HO_TRO_NGHEO = 0.30 # Hỗ trợ 30% cho hộ nghèo
+HO_TRO_CAN_NGHEO = 0.25 # Hỗ trợ 25% cho hộ cận nghèo
+HO_TRO_KHAC = 0.10 # Hỗ trợ 10% cho đối tượng khác
+
 # Tên file
 EXCEL_FILE = 'aaa.xlsb'
 DB_FILE = 'bhxh_data.db'
@@ -130,18 +139,11 @@ def configure_ai():
     return False
 
 def get_ai_response(prompt, role_desc="", stream=False):
-    """
-    Thử lần lượt các model từ mới đến cũ để tránh lỗi 404.
-    Không dùng list_models() vì dễ gây lỗi permission.
-    """
+    """Thử lần lượt các model từ mới đến cũ để tránh lỗi 404."""
     if not configure_ai(): return "⚠️ Lỗi: Chưa có API Key."
-    
-    # Danh sách model thử (Ưu tiên Flash -> Pro 1.5 -> Pro 1.0)
     models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
-    
     full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
     last_error = ""
-
     for model_name in models_to_try:
         try:
             model = genai.GenerativeModel(model_name)
@@ -150,8 +152,7 @@ def get_ai_response(prompt, role_desc="", stream=False):
         except Exception as e:
             last_error = str(e)
             if "429" in last_error: return "⚠️ Hệ thống đang quá tải. Vui lòng thử lại sau 1 phút."
-            continue # Thử model tiếp theo
-    
+            continue 
     return f"⚠️ Không kết nối được AI. Lỗi cuối cùng: {last_error}"
 
 # --- 3. XỬ LÝ DỮ LIỆU ---
@@ -168,7 +169,6 @@ def check_and_prepare_data():
             conn = init_data_db(); res = conn.execute("SELECT count(*) FROM bhxh").fetchone(); conn.close()
             if res and res[0] > 0: return True, "Sẵn sàng"
         except: os.remove(DB_FILE)
-
     parts = sorted(glob.glob(f"{ZIP_PART_PREFIX}*"))
     if parts:
         msg = st.empty(); msg.info(f"📦 Đang nối {len(parts)} phần dữ liệu...")
@@ -181,7 +181,6 @@ def check_and_prepare_data():
             if os.path.exists("bhxh_full.zip"): os.remove("bhxh_full.zip")
             msg.empty(); return True, "Restored"
         except Exception as e: return False, str(e)
-
     if os.path.exists(EXCEL_FILE): return import_excel_to_sqlite()
     return False, "⚠️ Thiếu dữ liệu"
 
@@ -231,6 +230,107 @@ def search_data(mode, q):
             return pd.read_sql_query(f'SELECT {sel} FROM bhxh WHERE {" AND ".join(conds)} LIMIT 50', conn, params=tuple(vals))
     except: return pd.DataFrame()
     finally: conn.close()
+
+# --- TÍNH BHXH TỰ NGUYỆN ---
+def format_vnd(value):
+    return f"{int(value):,} VNĐ".replace(",", ".")
+
+def render_calculator():
+    st.subheader("🧮 Tính Mức Đóng BHXH Tự Nguyện")
+    st.caption("Công cụ ước tính số tiền phải đóng dựa trên mức thu nhập bạn lựa chọn.")
+
+    # 1. Nhập mức thu nhập
+    st.markdown("#### 1. Chọn mức thu nhập làm căn cứ đóng")
+    col_inp, col_info = st.columns([2, 1])
+    
+    with col_inp:
+        # Thanh trượt chọn mức thu nhập (Bước nhảy 50k)
+        income = st.slider(
+            "Mức thu nhập (kéo thanh trượt):", 
+            min_value=CHUAN_NGHEO, 
+            max_value=MAX_MUC_DONG, 
+            value=CHUAN_NGHEO,
+            step=50000,
+            format="%d"
+        )
+        st.info(f"Mức thu nhập bạn chọn: **{format_vnd(income)}**")
+        
+        # Nhập số chính xác nếu cần
+        exact_income = st.number_input("Hoặc nhập số chính xác:", min_value=CHUAN_NGHEO, max_value=MAX_MUC_DONG, value=income, step=1000)
+        if exact_income != income:
+            income = exact_income
+
+    with col_info:
+        st.markdown(
+            f"""
+            <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; font-size: 0.9em;">
+            <b>Thông tin tham chiếu (2024):</b><br>
+            - Tối thiểu: {format_vnd(CHUAN_NGHEO)}<br>
+            - Tối đa: {format_vnd(MAX_MUC_DONG)}<br>
+            - Tỷ lệ đóng: 22%
+            </div>
+            """, unsafe_allow_html=True
+        )
+
+    # 2. Chọn đối tượng
+    st.markdown("#### 2. Chọn đối tượng ưu tiên (để tính mức hỗ trợ)")
+    doi_tuong = st.radio(
+        "Bạn thuộc đối tượng nào?",
+        ["Khác (Hỗ trợ 10%)", "Hộ nghèo (Hỗ trợ 30%)", "Hộ cận nghèo (Hỗ trợ 25%)"],
+        horizontal=True
+    )
+
+    # Tính toán
+    # Mức đóng chuẩn (chưa trừ hỗ trợ) = Thu nhập * 22%
+    muc_dong_chuan = income * TY_LE_DONG
+    
+    # Mức hỗ trợ của nhà nước = Chuẩn nghèo * % Hỗ trợ
+    if "Hộ nghèo" in doi_tuong:
+        muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_NGHEO # 30% của 22% chuẩn nghèo
+        tile_hotro = "30%"
+    elif "Hộ cận nghèo" in doi_tuong:
+        muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_CAN_NGHEO # 25% của 22% chuẩn nghèo
+        tile_hotro = "25%"
+    else:
+        muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_KHAC # 10% của 22% chuẩn nghèo
+        tile_hotro = "10%"
+
+    # Số tiền thực đóng = Mức đóng chuẩn - Mức hỗ trợ
+    so_tien_thuc_dong = muc_dong_chuan - muc_ho_tro
+
+    # 3. Hiển thị kết quả (Bảng so sánh các phương thức đóng)
+    st.markdown("---")
+    st.markdown("#### 📊 Bảng Chi Tiết Số Tiền Phải Đóng")
+    
+    # Tạo dữ liệu cho bảng
+    data = {
+        "Phương thức": ["Hằng tháng", "3 tháng", "6 tháng", "12 tháng"],
+        "Số tháng": [1, 3, 6, 12],
+        "Tổng mức đóng (chưa giảm)": [],
+        "Nhà nước hỗ trợ": [],
+        "BẠN PHẢI ĐÓNG": []
+    }
+
+    for months in data["Số tháng"]:
+        total_raw = muc_dong_chuan * months
+        total_support = muc_ho_tro * months
+        total_final = so_tien_thuc_dong * months
+        
+        data["Tổng mức đóng (chưa giảm)"].append(format_vnd(total_raw))
+        data["Nhà nước hỗ trợ"].append(format_vnd(total_support))
+        data["BẠN PHẢI ĐÓNG"].append(format_vnd(total_final))
+
+    df_result = pd.DataFrame(data)
+    
+    # Highlight cột kết quả
+    st.dataframe(
+        df_result.style.highlight_max(axis=0, subset=["BẠN PHẢI ĐÓNG"], color='#e6ffe6'),
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    st.success(f"💡 **Kết luận:** Với mức thu nhập **{format_vnd(income)}**, đối tượng **{doi_tuong}**, bạn chỉ cần đóng **{format_vnd(so_tien_thuc_dong)}/tháng**.")
+
 
 # --- 5. GIAO DIỆN ---
 def render_login():
@@ -323,9 +423,9 @@ def render_content():
         t = st.text_input("Chủ đề:")
         if st.button("Viết") and t:
             log_action(st.session_state['username'], "Content", t)
-            with st.spinner("..."): st.session_state['txt'] = get_ai_response(f"Viết về: {t}", "Chuyên viên truyền thông")
+            with st.spinner("..."): st.session_state['txt'] = get_ai_response(f"Viết bài tuyên truyền về: {topic}", "Chuyên viên truyền thông")
     with c2:
-        if 'txt' in st.session_state: st.text_area("KQ:", value=st.session_state['txt'], height=400)
+        if 'content' in st.session_state: st.text_area("Kết quả:", value=st.session_state['content'], height=400)
 
 def render_admin():
     st.header("🛠️ Quản Trị")
@@ -367,6 +467,7 @@ def main():
         with st.sidebar:
             st.title(f"Hi, {st.session_state['username']}")
             if st.button("🔍 Tra cứu", use_container_width=True): st.session_state['page'] = 'search'
+            if st.button("🧮 Tính BHXH", use_container_width=True): st.session_state['page'] = 'calc'
             if st.button("🤖 Chatbot", use_container_width=True): st.session_state['page'] = 'chat'
             if st.button("✍️ Nội dung", use_container_width=True): st.session_state['page'] = 'content'
             st.divider()
@@ -380,6 +481,7 @@ def main():
         
         p = st.session_state['page']; cols = get_display_columns()
         if p == 'search': render_search(cols)
+        elif p == 'calc': render_calculator()
         elif p == 'chat': render_chatbot()
         elif p == 'content': render_content()
         elif p == 'pass': render_change_password()
