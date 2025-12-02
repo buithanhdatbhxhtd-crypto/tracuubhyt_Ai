@@ -370,11 +370,14 @@ def render_login():
             if st.form_submit_button("Đăng nhập", use_container_width=True):
                 r = verify_login(u, p)
                 if r: 
+                    # --- SỬA LỖI ĐĂNG NHẬP LOOP ---
+                    st.success("✅ Đăng nhập thành công! Đang vào hệ thống...")
                     st.session_state.update({'logged_in': True, 'username': u, 'role': r})
                     log_action(u, "Login", "Success")
+                    time.sleep(0.5) # Chờ 0.5s để session kịp lưu trước khi reload
                     st.rerun()
                 else: 
-                    st.error("Sai thông tin đăng nhập")
+                    st.error("❌ Sai tên đăng nhập hoặc mật khẩu")
 
 def render_change_password():
     st.subheader("🔒 Đổi Mật Khẩu")
