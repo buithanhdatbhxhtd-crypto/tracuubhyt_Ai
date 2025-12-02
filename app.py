@@ -638,13 +638,46 @@ def render_news():
 # --- TRA CỨU ---
 def render_search(cols):
     st.subheader("🔍 Tra Cứu Thông Tin")
-    q = st.text_input("Nhập từ khóa:", placeholder="vd: nguyen van a 1990")
-    if q:
-        df = search_data('simple', q)
-        if not df.empty:
-            st.success(f"Tìm thấy {len(df)} kết quả")
-            st.dataframe(df, use_container_width=True, hide_index=True)
-        else: st.warning("Không tìm thấy.")
+    t1, t2 = st.tabs(["Tra cứu nhanh", "Tra cứu chi tiết"])
+    
+    with t1:
+        st.caption("Nhập bất kỳ thông tin gì bạn biết (Tên, Năm sinh, Mã số...)")
+        q = st.text_input("Nhập từ khóa:", placeholder="vd: nguyen van a 1990", key="simple_search_input")
+        if q:
+            df = search_data('simple', q)
+            if not df.empty:
+                st.success(f"Tìm thấy {len(df)} kết quả")
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            else: st.warning("Không tìm thấy.")
+            
+    with t2:
+        st.caption("Tìm kiếm chính xác theo từng trường dữ liệu")
+        # Default columns to show inputs for
+        defs = ['sobhxh', 'hoten', 'ngaysinh', 'socmnd', 'madoituong', 'maho']
+        # Filter available columns
+        sel = [c for c in cols if any(x in unidecode.unidecode(c).lower() for x in defs)] or cols[:4] 
+        
+        with st.expander("⚙️ Chọn trường tìm kiếm", expanded=False): 
+            s = st.multiselect("Chọn các cột bạn muốn nhập:", cols, default=sel)
+        
+        inp = {}
+        if s:
+            # Create a grid layout for inputs
+            num_cols = 4
+            cols_layout = st.columns(num_cols)
+            for i, n in enumerate(s): 
+                with cols_layout[i % num_cols]:
+                    inp[n] = st.text_input(f"Nhập {n}", key=f"manual_{n}")
+        
+        if st.button("🔍 Tìm kiếm chi tiết", type="primary"):
+            v = {k: val for k, val in inp.items() if val.strip()}
+            if v:
+                df = search_data('manual', v)
+                if not df.empty:
+                    st.success(f"Tìm thấy {len(df)} kết quả")
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+                else: st.warning("Không tìm thấy kết quả phù hợp.")
+            else: st.warning("Vui lòng nhập ít nhất một trường thông tin.")
 
 # --- MAIN LAYOUT ---
 def main():
