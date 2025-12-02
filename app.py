@@ -15,20 +15,15 @@ except:
 import streamlit as st
 import pandas as pd
 import sqlite3
-import hashlib
-import datetime
 import unidecode
 import time
 import os
 import zipfile
 import glob
-from google.cloud import firestore
-from google.oauth2 import service_account
-import json
 
 # --- CẤU HÌNH ỨNG DỤNG ---
 st.set_page_config(
-    page_title="Hệ thống BHXH Chuyên Nghiệp",
+    page_title="Hệ thống BHXH Chuyên Nghiệp (Không Đăng Nhập)",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -57,87 +52,14 @@ EXCEL_FILE = 'aaa.xlsb'
 DB_FILE = 'bhxh_data.db'
 ZIP_PART_PREFIX = 'bhxh_data.zip.' 
 
-# --- 1. KẾT NỐI DATABASE ĐÁM MÂY (FIREBASE) ---
-@st.cache_resource
-def get_firestore_db():
-    try:
-        if "gcp_service_account" in st.secrets:
-            key_dict = dict(st.secrets["gcp_service_account"])
-            creds = service_account.Credentials.from_service_account_info(key_dict)
-            return firestore.Client(credentials=creds, project=key_dict["project_id"])
-    except: return None
-    return None
-
-def make_hashes(password):
-    return hashlib.sha256(str.encode(password)).hexdigest()
-
-# --- QUẢN LÝ USER (CLOUD) ---
-def create_user(username, password, role):
-    db = get_firestore_db()
-    if not db: return False
-    doc_ref = db.collection("users").document(username)
-    if doc_ref.get().exists: return False 
-    doc_ref.set({"password": make_hashes(password), "role": role, "created_at": datetime.datetime.now()})
-    return True
-
-def verify_login(username, password):
-    db = get_firestore_db()
-    if not db: return None
-    doc = db.collection("users").document(username).get()
-    if doc.exists and doc.to_dict()["password"] == make_hashes(password): return doc.to_dict()["role"]
-    return None
-
-def delete_user_cloud(username):
-    db = get_firestore_db()
-    if db: db.collection("users").document(username).delete(); return True
-    return False
-
-def update_password(username, new_password):
-    db = get_firestore_db()
-    if db:
-        try: db.collection("users").document(username).update({"password": make_hashes(new_password)}); return True
-        except: return False
-    return False
-
-def get_all_users():
-    db = get_firestore_db()
-    if not db: return pd.DataFrame()
-    try: return pd.DataFrame([{"username": d.id, **d.to_dict()} for d in db.collection("users").stream()])
-    except: return pd.DataFrame()
-
-# --- QUẢN LÝ LOGS (CLOUD) ---
-def log_action(username, action, details=""):
-    try:
-        db = get_firestore_db()
-        if db:
-            vn_timezone = datetime.timezone(datetime.timedelta(hours=7))
-            now_vn = datetime.datetime.now(vn_timezone)
-            db.collection("logs").add({
-                "timestamp": now_vn.strftime("%Y-%m-%d %H:%M:%S"),
-                "sort_time": firestore.SERVER_TIMESTAMP,
-                "username": username, "action": action, "details": str(details)
-            })
-    except: pass
-
-def get_logs(limit=100):
-    db = get_firestore_db()
-    if not db: return pd.DataFrame()
-    try:
-        logs_ref = db.collection("logs").order_by("sort_time", direction=firestore.Query.DESCENDING).limit(limit)
-        return pd.DataFrame([{"Thời gian (VN)": d.to_dict().get("timestamp"), "Người dùng": d.to_dict().get("username"), "Hành động": d.to_dict().get("action"), "Chi tiết": d.to_dict().get("details")} for d in logs_ref.stream()])
-    except: return pd.DataFrame()
-
-def init_cloud_admin():
-    if "admin_checked" not in st.session_state:
-        if verify_login("admin", "admin123") is None: create_user("admin", "admin123", "admin")
-        st.session_state["admin_checked"] = True
-
+# --- WIDGET ZALO ---
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- 2. HỆ THỐNG AI (CƠ CHẾ MỚI) ---
+# --- HỆ THỐNG AI (CƠ CHẾ MỚI) ---
 def configure_ai():
-    key = HARDCODED_API_KEY or st.session_state.get('user_api_key') or st.secrets.get("GOOGLE_API_KEY")
+    # Sử dụng API Key mặc định hoặc từ Streamlit secrets
+    key = HARDCODED_API_KEY or st.secrets.get("GOOGLE_API_KEY")
     if key: genai.configure(api_key=key); return True
     return False
 
@@ -158,7 +80,7 @@ def get_ai_response(prompt, role_desc="", stream=False):
             continue 
     return f"⚠️ Không kết nối được AI. Lỗi cuối cùng: {last_error}"
 
-# --- 3. XỬ LÝ DỮ LIỆU ---
+# --- XỬ LÝ DỮ LIỆU ---
 def clean_text(text): return unidecode.unidecode(str(text)).lower().replace(' ', '') if pd.notna(text) else ""
 
 def init_data_db():
@@ -213,7 +135,7 @@ def get_display_columns():
     except: return []
     finally: conn.close()
 
-# --- 4. TÌM KIẾM ---
+# --- TÌM KIẾM ---
 def search_data(mode, q):
     conn = init_data_db(); cols = get_display_columns()
     if not cols: return pd.DataFrame()
@@ -337,44 +259,14 @@ def render_calculator():
     
     st.success(f"💡 **Kết luận:** Với mức thu nhập **{format_vnd(income)}**, đối tượng **{doi_tuong}**, bạn chỉ cần đóng **{format_vnd(so_tien_thuc_dong)}/tháng**.")
 
-
-# --- 5. GIAO DIỆN ---
-def render_login():
-    st.markdown("<h2 style='text-align: center;'>🔐 Đăng Nhập Hệ Thống</h2>", unsafe_allow_html=True)
-    if not get_firestore_db(): st.error("❌ Lỗi kết nối Database Cloud."); return
-    render_zalo_widget()
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c2:
-        with st.form("login"):
-            u = st.text_input("Tên đăng nhập")
-            p = st.text_input("Mật khẩu", type='password')
-            if st.form_submit_button("Đăng nhập", use_container_width=True):
-                r = verify_login(u, p)
-                if r: st.session_state.update({'logged_in': True, 'username': u, 'role': r}); log_action(u, "Login", "Success"); st.rerun()
-                else: st.error("Sai thông tin")
-
-def render_change_password():
-    st.subheader("🔒 Đổi Mật Khẩu")
-    with st.form("change_pass"):
-        o = st.text_input("Mật khẩu cũ", type="password")
-        n = st.text_input("Mật khẩu mới", type="password")
-        c = st.text_input("Nhập lại", type="password")
-        if st.form_submit_button("Đổi"):
-            u = st.session_state['username']
-            if verify_login(u, o):
-                if n == c and len(n) >= 6:
-                    if update_password(u, n): st.success("Thành công!"); log_action(u, "ChangePass"); time.sleep(1); st.session_state['logged_in'] = False; st.rerun()
-                    else: st.error("Lỗi mạng")
-                else: st.warning("Mật khẩu không khớp/ngắn")
-            else: st.error("Mật khẩu cũ sai")
-
+# --- GIAO DIỆN ---
 def render_search(cols):
     st.subheader("🔍 Tra Cứu")
     t1, t2 = st.tabs(["Nhanh (AI)", "Chi tiết"])
     with t1:
         q = st.text_input("Từ khóa:", placeholder="vd: nguyen van a 1990")
         if q:
-            log_action(st.session_state['username'], "Search AI", q)
+            # log_action(st.session_state['username'], "Search AI", q) # Đã loại bỏ log
             df = search_data('ai', q)
             if not df.empty:
                 st.success(f"Tìm thấy {len(df)} kết quả")
@@ -385,7 +277,8 @@ def render_search(cols):
             else: st.warning("Không thấy.")
     with t2:
         defs = ['sobhxh', 'hoten', 'ngaysinh', 'socmnd']
-        sel = [c for c in cols if any(x in unidecode.unidecode(c).lower() for x in defs)] or cols[:4]
+        # Lấy 4 cột mặc định hoặc 4 cột đầu tiên
+        sel = [c for c in cols if any(x in unidecode.unidecode(c).lower() for x in defs)] or cols[:4] 
         with st.expander("Cấu hình", expanded=True): s = st.multiselect("Cột:", cols, default=sel)
         inp = {}
         if s:
@@ -394,7 +287,7 @@ def render_search(cols):
         if st.button("Tìm"):
             v = {k: val for k, val in inp.items() if val.strip()}
             if v:
-                log_action(st.session_state['username'], "Search Manual", str(v))
+                # log_action(st.session_state['username'], "Search Manual", str(v)) # Đã loại bỏ log
                 df = search_data('manual', v)
                 if not df.empty:
                     st.success(f"Thấy {len(df)} KQ")
@@ -404,15 +297,21 @@ def render_search(cols):
 
 def render_chatbot():
     st.subheader("🤖 Chatbot")
-    if "msg" not in st.session_state: st.session_state.msg = [{"role": "model", "content": "Chào bạn! Tôi có thể giúp gì?"}]
+    if "msg" not in st.session_state: st.session_state.msg = [{"role": "model", "content": "Chào bạn! Tôi là chuyên gia BHXH AI. Tôi có thể giải đáp các thắc mắc về chính sách BHXH, BHYT."}]
+    
+    # Hiển thị lịch sử chat
     for m in st.session_state.msg: st.chat_message(m["role"]).markdown(m["content"])
+    
+    # Nhận input mới
     if p := st.chat_input():
-        log_action(st.session_state['username'], "Chatbot", p)
+        # log_action("anonymous", "Chatbot", p) # Đã loại bỏ log
         st.session_state.msg.append({"role": "user", "content": p})
         st.chat_message("user").markdown(p)
+        
         with st.chat_message("model"):
             ph = st.empty(); res = ""; 
-            s = get_ai_response(p, "Chuyên gia BHXH Việt Nam.", True)
+            # Dùng stream cho trải nghiệm tốt hơn
+            s = get_ai_response(p, "Chuyên gia BHXH Việt Nam. Trả lời bằng tiếng Việt thân thiện, chính xác.", True)
             try:
                 if isinstance(s, str): ph.markdown(s); res = s
                 else:
@@ -423,76 +322,55 @@ def render_chatbot():
             st.session_state.msg.append({"role": "model", "content": res})
 
 def render_content():
-    st.subheader("✍️ Tạo Nội Dung")
-    c1, c2 = st.columns(2)
+    st.subheader("✍️ Tạo Nội Dung Tuyên Truyền")
+    st.caption("Sử dụng AI để viết các bài tuyên truyền về chính sách BHXH, BHYT.")
+    c1, c2 = st.columns([1, 2])
+    
+    # Input area
     with c1:
-        t = st.text_input("Chủ đề:")
-        if st.button("Viết") and t:
-            log_action(st.session_state['username'], "Content", t)
-            with st.spinner("..."): st.session_state['txt'] = get_ai_response(f"Viết bài tuyên truyền về: {topic}", "Chuyên viên truyền thông")
+        t = st.text_area("Chủ đề cần viết (ví dụ: Lợi ích của BHXH tự nguyện)", height=150)
+        if st.button("Viết Nội Dung", use_container_width=True) and t:
+            # log_action("anonymous", "Content", t) # Đã loại bỏ log
+            with st.spinner("Đang tạo nội dung..."): 
+                # Cập nhật session state với nội dung mới
+                st.session_state['generated_txt'] = get_ai_response(f"Viết một bài tuyên truyền ngắn gọn, hấp dẫn, dễ hiểu về chủ đề: {t}", "Chuyên viên truyền thông BHXH.")
+    
+    # Output area
     with c2:
-        if 'content' in st.session_state: st.text_area("Kết quả:", value=st.session_state['content'], height=400)
-
-def render_admin():
-    st.header("🛠️ Quản Trị")
-    t1, t2 = st.tabs(["User", "Logs"])
-    with t1:
-        st.dataframe(get_all_users(), use_container_width=True)
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            with st.popover("➕ Thêm"):
-                with st.form("a"):
-                    u = st.text_input("User"); p = st.text_input("Pass"); r = st.selectbox("Role", ["user", "admin"])
-                    if st.form_submit_button("Tạo"):
-                        if create_user(u, p, r): st.success("OK"); log_action(st.session_state['username'], "Add", u); time.sleep(1); st.rerun()
-                        else: st.error("Trùng")
-        with c2:
-            with st.popover("🗑️ Xóa"):
-                d = st.text_input("User xóa:")
-                if st.button("Xóa"):
-                    if d != "admin" and delete_user_cloud(d): st.success("OK"); log_action(st.session_state['username'], "Del", d); time.sleep(1); st.rerun()
-                    else: st.error("Lỗi")
-        with c3:
-            with st.popover("🔄 Reset Pass"):
-                rs = st.text_input("User reset (123456):")
-                if st.button("Reset"):
-                    if update_password(rs, "123456"): st.success("OK"); log_action(st.session_state['username'], "Reset", rs)
-                    else: st.error("Lỗi")
-    with t2:
-        if st.button("Tải lại"): st.rerun()
-        st.dataframe(get_logs(200), use_container_width=True)
+        result_text = st.session_state.get('generated_txt', "Kết quả sẽ hiển thị ở đây sau khi bạn nhấn 'Viết Nội Dung'.")
+        st.text_area("Kết quả:", value=result_text, height=400)
 
 def main():
-    init_cloud_admin()
-    if 'logged_in' not in st.session_state: st.session_state.update({'logged_in': False, 'page': 'search'})
+    # Khởi tạo state và check data
+    if 'page' not in st.session_state: st.session_state['page'] = 'search'
+    
     render_zalo_widget()
+    
     ok, msg = check_and_prepare_data()
     if not ok: st.error(msg); return
-    if not st.session_state['logged_in']: render_login()
-    else:
-        with st.sidebar:
-            st.title(f"Hi, {st.session_state['username']}")
-            if st.button("🔍 Tra cứu", use_container_width=True): st.session_state['page'] = 'search'
-            if st.button("🧮 Tính BHXH", use_container_width=True): st.session_state['page'] = 'calc'
-            if st.button("🤖 Chatbot", use_container_width=True): st.session_state['page'] = 'chat'
-            if st.button("✍️ Nội dung", use_container_width=True): st.session_state['page'] = 'content'
-            st.divider()
-            if st.button("🔒 Đổi mật khẩu", use_container_width=True): st.session_state['page'] = 'pass'
-            if st.session_state['role'] == 'admin':
-                st.divider(); 
-                if st.button("🛠️ Quản trị", use_container_width=True): st.session_state['page'] = 'admin'
-            st.divider()
-            if st.button("Đăng xuất", use_container_width=True):
-                log_action(st.session_state['username'], "Logout"); st.session_state['logged_in'] = False; st.rerun()
+    
+    # Giao diện không cần đăng nhập
+    with st.sidebar:
+        st.title("🏥 Hệ thống BHXH")
+        st.caption("Chạy ở chế độ công khai (Không cần đăng nhập)")
+        st.divider()
         
-        p = st.session_state['page']; cols = get_display_columns()
-        if p == 'search': render_search(cols)
-        elif p == 'calc': render_calculator()
-        elif p == 'chat': render_chatbot()
-        elif p == 'content': render_content()
-        elif p == 'pass': render_change_password()
-        elif p == 'admin': render_admin()
+        # Menu chính
+        if st.button("🔍 Tra cứu CSDL", use_container_width=True): st.session_state['page'] = 'search'
+        if st.button("🧮 Tính BHXH Tự Nguyện", use_container_width=True): st.session_state['page'] = 'calc'
+        if st.button("🤖 Chatbot Hỏi Đáp", use_container_width=True): st.session_state['page'] = 'chat'
+        if st.button("✍️ Tạo Nội Dung", use_container_width=True): st.session_state['page'] = 'content'
+
+    # Hiển thị nội dung theo page
+    p = st.session_state['page']
+    
+    if p == 'search': 
+        cols = get_display_columns()
+        if not cols: st.error("❌ Không tìm thấy dữ liệu cột."); return
+        render_search(cols)
+    elif p == 'calc': render_calculator()
+    elif p == 'chat': render_chatbot()
+    elif p == 'content': render_content()
 
 if __name__ == '__main__':
     main()
-
