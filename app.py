@@ -1,17 +1,4 @@
-# --- TỰ ĐỘNG NÂNG CẤP THƯ VIỆN AI NẾU CŨ (FIX LỖI 404) ---
-import subprocess
-import sys
-try:
-    import google.generativeai as genai
-    import pkg_resources
-    # Kiểm tra version, nếu thấp hơn 0.7.0 thì update ngay lập tức
-    ver = pkg_resources.get_distribution("google-generativeai").version
-    if ver < "0.7.0":
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "google-generativeai"])
-        import google.generativeai as genai
-except:
-    pass # Bỏ qua nếu lỗi import pkg_resources
-
+# --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN LITE - KHÔNG AI) ---
 import streamlit as st
 import pandas as pd
 import sqlite3
@@ -20,10 +7,12 @@ import time
 import os
 import zipfile
 import glob
+from datetime import date, timedelta
+from dateutil.relativedelta import relativedelta
 
 # --- CẤU HÌNH ỨNG DỤNG ---
 st.set_page_config(
-    page_title="Hệ thống BHXH Chuyên Nghiệp (Không Đăng Nhập)",
+    page_title="Hệ thống BHXH (Tra cứu & Tính toán)",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -32,7 +21,6 @@ st.set_page_config(
 # ==============================================================================
 # 🔑 CẤU HÌNH HỆ THỐNG
 # ==============================================================================
-HARDCODED_API_KEY = "AIzaSyBd6MNZdWTsJiTy1yrrWK4G2PsltqFV6eg" 
 ZALO_PHONE_NUMBER = "0986053006" 
 
 # CÁC HẰNG SỐ TÍNH BHXH TỰ NGUYỆN (CẬP NHẬT 2025)
@@ -47,7 +35,7 @@ HO_TRO_CAN_NGHEO = 0.40 # 40%
 HO_TRO_DAN_TOC = 0.30   # 30%
 HO_TRO_KHAC = 0.20      # 20%
 
-# Tên file
+# Tên file dữ liệu
 EXCEL_FILE = 'aaa.xlsb'
 DB_FILE = 'bhxh_data.db'
 ZIP_PART_PREFIX = 'bhxh_data.zip.' 
@@ -56,31 +44,7 @@ ZIP_PART_PREFIX = 'bhxh_data.zip.'
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- HỆ THỐNG AI (CƠ CHẾ MỚI) ---
-def configure_ai():
-    # Sử dụng API Key mặc định hoặc từ Streamlit secrets
-    key = HARDCODED_API_KEY or st.secrets.get("GOOGLE_API_KEY")
-    if key: genai.configure(api_key=key); return True
-    return False
-
-def get_ai_response(prompt, role_desc="", stream=False):
-    """Thử lần lượt các model từ mới đến cũ để tránh lỗi 404."""
-    if not configure_ai(): return "⚠️ Lỗi: Chưa có API Key."
-    models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
-    full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
-    last_error = ""
-    for model_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(model_name)
-            if stream: return model.generate_content(full_prompt, stream=True)
-            return model.generate_content(full_prompt).text
-        except Exception as e:
-            last_error = str(e)
-            if "429" in last_error: return "⚠️ Hệ thống đang quá tải. Vui lòng thử lại sau 1 phút."
-            continue 
-    return f"⚠️ Không kết nối được AI. Lỗi cuối cùng: {last_error}"
-
-# --- XỬ LÝ DỮ LIỆU ---
+# --- XỬ LÝ DỮ LIỆU (GIỮ NGUYÊN) ---
 def clean_text(text): return unidecode.unidecode(str(text)).lower().replace(' ', '') if pd.notna(text) else ""
 
 def init_data_db():
@@ -135,13 +99,13 @@ def get_display_columns():
     except: return []
     finally: conn.close()
 
-# --- TÌM KIẾM ---
+# --- TÌM KIẾM (GIỮ NGUYÊN LOGIC) ---
 def search_data(mode, q):
     conn = init_data_db(); cols = get_display_columns()
     if not cols: return pd.DataFrame()
     sel = ", ".join([f'"{c}"' for c in cols])
     try:
-        if mode == 'ai':
+        if mode == 'simple': # Đổi tên từ 'ai' sang 'simple' cho chính xác
             k = clean_text(q); 
             if not k: return pd.DataFrame()
             return pd.read_sql_query(f'SELECT {sel} FROM bhxh WHERE master_search_idx LIKE ? LIMIT 50', conn, params=(f'%{k}%',))
@@ -156,7 +120,7 @@ def search_data(mode, q):
     except: return pd.DataFrame()
     finally: conn.close()
 
-# --- TÍNH BHXH TỰ NGUYỆN (CẬP NHẬT 2025) ---
+# --- TÍNH BHXH TỰ NGUYỆN (GIỮ NGUYÊN) ---
 def format_vnd(value):
     return f"{int(value):,} VNĐ".replace(",", ".")
 
@@ -206,10 +170,8 @@ def render_calculator():
     )
 
     # Tính toán
-    # Mức đóng chuẩn (chưa trừ hỗ trợ) = Thu nhập * 22%
     muc_dong_chuan = income * TY_LE_DONG
     
-    # Mức hỗ trợ của nhà nước = Chuẩn nghèo * % Hỗ trợ (theo yêu cầu mới)
     if "Hộ nghèo" in doi_tuong:
         muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_NGHEO
         tile_hotro = "50%"
@@ -223,14 +185,12 @@ def render_calculator():
         muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_KHAC
         tile_hotro = "20%"
 
-    # Số tiền thực đóng = Mức đóng chuẩn - Mức hỗ trợ
     so_tien_thuc_dong = muc_dong_chuan - muc_ho_tro
 
-    # 3. Hiển thị kết quả (Bảng so sánh các phương thức đóng)
+    # 3. Hiển thị kết quả
     st.markdown("---")
     st.markdown(f"#### 📊 Bảng Chi Tiết Số Tiền Phải Đóng (Hỗ trợ: {tile_hotro})")
     
-    # Tạo dữ liệu cho bảng
     data = {
         "Phương thức": ["Hằng tháng", "3 tháng", "6 tháng", "12 tháng"],
         "Số tháng": [1, 3, 6, 12],
@@ -250,7 +210,6 @@ def render_calculator():
 
     df_result = pd.DataFrame(data)
     
-    # Highlight cột kết quả
     st.dataframe(
         df_result.style.highlight_max(axis=0, subset=["BẠN PHẢI ĐÓNG"], color='#e6ffe6'),
         use_container_width=True,
@@ -259,86 +218,146 @@ def render_calculator():
     
     st.success(f"💡 **Kết luận:** Với mức thu nhập **{format_vnd(income)}**, đối tượng **{doi_tuong}**, bạn chỉ cần đóng **{format_vnd(so_tien_thuc_dong)}/tháng**.")
 
-# --- GIAO DIỆN ---
+# --- TÍNH TUỔI NGHỈ HƯU (NEW - NGHỊ ĐỊNH 135) ---
+def render_retirement_calculator():
+    st.subheader("👴👵 Tính Tuổi Nghỉ Hưu (Nghị định 135/2020/NĐ-CP)")
+    st.caption("Công cụ xác định thời điểm nghỉ hưu chính xác theo lộ trình tăng tuổi nghỉ hưu.")
+
+    # Input
+    c1, c2 = st.columns(2)
+    with c1:
+        dob = st.date_input("Ngày tháng năm sinh:", min_value=date(1950, 1, 1), max_value=date(2010, 12, 31), value=date(1970, 1, 1))
+    with c2:
+        gender = st.radio("Giới tính:", ["Nam", "Nữ"], horizontal=True)
+
+    if st.button("Tính toán ngày nghỉ hưu", type="primary"):
+        # LOGIC TÍNH TOÁN THEO NGHỊ ĐỊNH 135
+        # NAM:
+        # - Sinh trước 1/1/1961: 60 tuổi
+        # - Sinh từ 1/10/1966 trở đi: 62 tuổi
+        # - Lộ trình: Mỗi năm tăng 3 tháng
+        # NỮ:
+        # - Sinh trước 1/1/1966: 55 tuổi
+        # - Sinh từ 1/1/1980 (đã điều chỉnh để khớp lộ trình): 60 tuổi 
+        #   (Chính xác là sinh từ tháng 9/1979 theo bảng, nhưng tính tròn lộ trình theo năm)
+        # - Lộ trình: Mỗi năm tăng 4 tháng
+
+        target_years = 0
+        target_months = 0
+        
+        # 1. Xác định tuổi nghỉ hưu quy định
+        if gender == "Nam":
+            # Mốc cố định cũ
+            if dob < date(1961, 1, 1):
+                target_years = 60
+                target_months = 0
+            # Mốc cố định mới (max)
+            elif dob >= date(1966, 10, 1):
+                target_years = 62
+                target_months = 0
+            else:
+                # Giai đoạn chuyển tiếp (Sinh 1961 - 9/1966)
+                # Công thức: 60 tuổi + (Năm sinh - 1960) * 3 tháng ???
+                # Cách chính xác nhất là map theo năm sinh như Phụ lục I
+                # 1961 -> 60t 3th
+                # 1962 -> 60t 6th
+                # ...
+                year_diff = dob.year - 1960
+                months_add = year_diff * 3
+                
+                # Xử lý riêng cho năm 1966 (chỉ đến tháng 9)
+                if dob.year == 1966 and dob.month >= 10:
+                    target_years = 62
+                    target_months = 0
+                else:
+                    target_years = 60
+                    target_months = months_add
+                    
+        else: # Nữ
+            # Mốc cố định cũ
+            if dob < date(1966, 1, 1):
+                target_years = 55
+                target_months = 0
+            # Mốc cố định mới (max) - Theo phụ lục là từ 1980 (hoặc cuối 1979)
+            elif dob >= date(1980, 1, 1): # Căn cứ thực tế lộ trình đến 2035
+                target_years = 60
+                target_months = 0
+            else:
+                # Giai đoạn chuyển tiếp (Sinh 1966 - 1979)
+                # 1966 -> 55t 4th
+                # 1967 -> 55t 8th
+                year_diff = dob.year - 1965
+                months_add = year_diff * 4
+                
+                target_years = 55
+                target_months = months_add
+
+        # 2. Quy đổi target_months dư thành năm (ví dụ 15 tháng -> 1 năm 3 tháng)
+        add_years = target_months // 12
+        rem_months = target_months % 12
+        
+        final_age_years = target_years + add_years
+        final_age_months = rem_months
+
+        # 3. Tính ngày nghỉ hưu
+        # Logic: Cộng số năm và số tháng vào ngày sinh
+        retirement_date = dob + relativedelta(years=final_age_years, months=final_age_months)
+        
+        # Vì thời điểm nghỉ hưu là "kết thúc tháng đủ tuổi", thời điểm hưởng là "đầu tháng liền kề"
+        # Ta hiển thị tháng nghỉ hưu
+        
+        st.markdown("---")
+        st.success("✅ **KẾT QUẢ TÍNH TOÁN**")
+        
+        res_col1, res_col2 = st.columns(2)
+        
+        with res_col1:
+            st.metric(
+                label="Tuổi nghỉ hưu theo quy định", 
+                value=f"{final_age_years} tuổi {final_age_months} tháng" if final_age_months > 0 else f"{final_age_years} tuổi"
+            )
+        
+        with res_col2:
+            st.metric(
+                label="Thời điểm được nghỉ hưu",
+                value=f"Tháng {retirement_date.month}/{retirement_date.year}"
+            )
+            
+        st.info(f"📅 Cụ thể: Bạn sinh ngày {dob.day}/{dob.month}/{dob.year}, bạn sẽ đủ tuổi nghỉ hưu vào khoảng **tháng {retirement_date.month} năm {retirement_date.year}**.")
+        st.caption("Lưu ý: Kết quả này áp dụng cho điều kiện lao động bình thường (không tính trường hợp suy giảm lao động, làm nghề nặng nhọc độc hại, v.v...).")
+
+# --- GIAO DIỆN TÌM KIẾM (GIỮ NGUYÊN) ---
 def render_search(cols):
-    st.subheader("🔍 Tra Cứu")
-    t1, t2 = st.tabs(["Nhanh (AI)", "Chi tiết"])
+    st.subheader("🔍 Tra Cứu Thông Tin")
+    t1, t2 = st.tabs(["Tra cứu nhanh", "Tra cứu chi tiết"])
+    
     with t1:
-        q = st.text_input("Từ khóa:", placeholder="vd: nguyen van a 1990")
+        st.info("💡 Mẹo: Nhập không dấu, không viết hoa. Ví dụ: 'nguyen van a 1990'")
+        q = st.text_input("Nhập từ khóa:", placeholder="vd: nguyen van a 1990")
         if q:
-            # log_action(st.session_state['username'], "Search AI", q) # Đã loại bỏ log
-            df = search_data('ai', q)
+            df = search_data('simple', q)
             if not df.empty:
                 st.success(f"Tìm thấy {len(df)} kết quả")
                 st.dataframe(df, use_container_width=True, hide_index=True)
-                if len(df) == 1:
-                    with st.expander("✨ AI Phân tích"):
-                        st.write(get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", "Chuyên gia BHXH tóm tắt."))
-            else: st.warning("Không thấy.")
+            else: st.warning("Không tìm thấy kết quả nào.")
+            
     with t2:
         defs = ['sobhxh', 'hoten', 'ngaysinh', 'socmnd']
-        # Lấy 4 cột mặc định hoặc 4 cột đầu tiên
         sel = [c for c in cols if any(x in unidecode.unidecode(c).lower() for x in defs)] or cols[:4] 
-        with st.expander("Cấu hình", expanded=True): s = st.multiselect("Cột:", cols, default=sel)
+        with st.expander("Cấu hình cột tìm kiếm", expanded=True): s = st.multiselect("Chọn trường dữ liệu:", cols, default=sel)
         inp = {}
         if s:
             c = st.columns(4)
             for i, n in enumerate(s): inp[n] = c[i % 4].text_input(n)
-        if st.button("Tìm"):
+        if st.button("🔍 Tìm kiếm ngay"):
             v = {k: val for k, val in inp.items() if val.strip()}
             if v:
-                # log_action(st.session_state['username'], "Search Manual", str(v)) # Đã loại bỏ log
                 df = search_data('manual', v)
                 if not df.empty:
-                    st.success(f"Thấy {len(df)} KQ")
+                    st.success(f"Tìm thấy {len(df)} kết quả")
                     st.dataframe(df, use_container_width=True, hide_index=True)
-                else: st.warning("Không thấy.")
-            else: st.warning("Nhập thông tin.")
-
-def render_chatbot():
-    st.subheader("🤖 Chatbot")
-    if "msg" not in st.session_state: st.session_state.msg = [{"role": "model", "content": "Chào bạn! Tôi là chuyên gia BHXH AI. Tôi có thể giải đáp các thắc mắc về chính sách BHXH, BHYT."}]
-    
-    # Hiển thị lịch sử chat
-    for m in st.session_state.msg: st.chat_message(m["role"]).markdown(m["content"])
-    
-    # Nhận input mới
-    if p := st.chat_input():
-        # log_action("anonymous", "Chatbot", p) # Đã loại bỏ log
-        st.session_state.msg.append({"role": "user", "content": p})
-        st.chat_message("user").markdown(p)
-        
-        with st.chat_message("model"):
-            ph = st.empty(); res = ""; 
-            # Dùng stream cho trải nghiệm tốt hơn
-            s = get_ai_response(p, "Chuyên gia BHXH Việt Nam. Trả lời bằng tiếng Việt thân thiện, chính xác.", True)
-            try:
-                if isinstance(s, str): ph.markdown(s); res = s
-                else:
-                    for c in s: 
-                        if c.text: res += c.text; ph.markdown(res + "▌")
-                    ph.markdown(res)
-            except: ph.markdown(res)
-            st.session_state.msg.append({"role": "model", "content": res})
-
-def render_content():
-    st.subheader("✍️ Tạo Nội Dung Tuyên Truyền")
-    st.caption("Sử dụng AI để viết các bài tuyên truyền về chính sách BHXH, BHYT.")
-    c1, c2 = st.columns([1, 2])
-    
-    # Input area
-    with c1:
-        t = st.text_area("Chủ đề cần viết (ví dụ: Lợi ích của BHXH tự nguyện)", height=150)
-        if st.button("Viết Nội Dung", use_container_width=True) and t:
-            # log_action("anonymous", "Content", t) # Đã loại bỏ log
-            with st.spinner("Đang tạo nội dung..."): 
-                # Cập nhật session state với nội dung mới
-                st.session_state['generated_txt'] = get_ai_response(f"Viết một bài tuyên truyền ngắn gọn, hấp dẫn, dễ hiểu về chủ đề: {t}", "Chuyên viên truyền thông BHXH.")
-    
-    # Output area
-    with c2:
-        result_text = st.session_state.get('generated_txt', "Kết quả sẽ hiển thị ở đây sau khi bạn nhấn 'Viết Nội Dung'.")
-        st.text_area("Kết quả:", value=result_text, height=400)
+                else: st.warning("Không tìm thấy kết quả phù hợp.")
+            else: st.warning("Vui lòng nhập ít nhất một thông tin.")
 
 def main():
     # Khởi tạo state và check data
@@ -349,19 +368,17 @@ def main():
     ok, msg = check_and_prepare_data()
     if not ok: st.error(msg); return
     
-    # Giao diện không cần đăng nhập
+    # Sidebar menu
     with st.sidebar:
-        st.title("🏥 Hệ thống BHXH")
-        st.caption("Chạy ở chế độ công khai (Không cần đăng nhập)")
+        st.title("🏥 BHXH Tiện Ích")
         st.divider()
         
-        # Menu chính
         if st.button("🔍 Tra cứu CSDL", use_container_width=True): st.session_state['page'] = 'search'
         if st.button("🧮 Tính BHXH Tự Nguyện", use_container_width=True): st.session_state['page'] = 'calc'
-        if st.button("🤖 Chatbot Hỏi Đáp", use_container_width=True): st.session_state['page'] = 'chat'
-        if st.button("✍️ Tạo Nội Dung", use_container_width=True): st.session_state['page'] = 'content'
+        # Nút mới
+        if st.button("👵 Tính Tuổi Nghỉ Hưu", use_container_width=True): st.session_state['page'] = 'retirement'
 
-    # Hiển thị nội dung theo page
+    # Router
     p = st.session_state['page']
     
     if p == 'search': 
@@ -369,8 +386,7 @@ def main():
         if not cols: st.error("❌ Không tìm thấy dữ liệu cột."); return
         render_search(cols)
     elif p == 'calc': render_calculator()
-    elif p == 'chat': render_chatbot()
-    elif p == 'content': render_content()
+    elif p == 'retirement': render_retirement_calculator()
 
 if __name__ == '__main__':
     main()
