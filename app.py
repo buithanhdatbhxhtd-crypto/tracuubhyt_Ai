@@ -445,31 +445,54 @@ def render_search(cols):
                         st.write(get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", "Chuyên gia BHXH tóm tắt."))
             else: st.warning("Không thấy.")
     
-    # TAB 2: TRA CỨU CHI TIẾT (Có Tự Động Gợi Ý)
+    # TAB 2: TRA CỨU CHI TIẾT (Có Tự Động Gợi Ý và 3 trường cố định)
     with t2:
-        defs = ['sobhxh', 'ho_ten', 'ngay_sinh', 'so_cmnd'] # Sử dụng tên cột chuẩn hóa
+        defs = ['so_bhxh', 'ho_ten', 'ngay_sinh', 'so_cmnd'] 
         
-        # Lấy các cột chính để gợi ý
-        important_cols = [c for c in cols if any(x in c.lower() for x in defs)] 
+        # 1. Định nghĩa các cột cố định
+        fixed_cols = ["ho_ten", "so_bhxh", "so_cmnd"]
         
-        with st.expander("Cấu hình & Tự động Gợi ý", expanded=True): 
-            s = st.multiselect("Cột:", cols, default=important_cols or cols[:4])
-        
+        # Tạo input cho 3 trường cố định với tính năng gợi ý (Autosuggest)
         inp = {}
-        if s:
-            c = st.columns(4)
-            for i, n in enumerate(s): 
-                # Áp dụng Tự Động Gợi Ý (Autosuggest) cho các cột chính
-                if n in ["ho_ten", "so_bhxh", "so_cmnd"]:
-                    options = get_autocomplete_options(n)
-                    # Thêm option trống để người dùng có thể nhập thủ công
-                    options.insert(0, "")
-                    inp[n] = c[i % 4].selectbox(f"Chọn/Nhập {n}:", options=options)
-                else:
-                    # Dùng text input cho các cột khác (Ngày sinh, địa chỉ...)
-                    inp[n] = c[i % 4].text_input(n) 
+        c_fixed = st.columns(3)
+        
+        for i, n in enumerate(fixed_cols):
+            if n in cols: # Chỉ hiển thị nếu cột tồn tại trong DB
+                options = get_autocomplete_options(n)
+                options.insert(0, "") # Thêm option trống
+                # Sử dụng tên tiếng Việt cho giao diện
+                display_name = n.replace('_', ' ').title().replace('So', 'Số').replace('Ho', 'Họ')
+                
+                with c_fixed[i]:
+                    inp[n] = st.selectbox(f"{display_name}:", options=options, key=f'fixed_select_{n}')
+            else:
+                # Nếu cột không tồn tại, thêm vào dict input với giá trị trống (hoặc bỏ qua)
+                inp[n] = ""
 
-        if st.button("Tìm"):
+        st.markdown("---") # Đường kẻ phân tách
+
+        # 2. Cấu hình cho các cột tùy chọn còn lại
+        
+        # Lấy danh sách các cột còn lại không phải là cột cố định
+        remaining_cols = [c for c in cols if c not in fixed_cols]
+        
+        # Mặc định chọn các cột quan trọng khác (nếu có)
+        default_selected_remaining = [c for c in remaining_cols if any(x in c.lower() for x in ['ngay_sinh', 'diachi'])] or []
+
+        with st.expander("➕ Tra cứu nâng cao (Chọn thêm cột khác)"): 
+            s = st.multiselect("Cột tùy chọn:", remaining_cols, default=default_selected_remaining)
+        
+        # 3. Tạo input cho các cột tùy chọn
+        if s:
+            c_optional = st.columns(4)
+            for i, n in enumerate(s): 
+                # Dùng text input cho các cột còn lại
+                display_name = n.replace('_', ' ').title().replace('So', 'Số').replace('Ho', 'Họ')
+                inp[n] = c_optional[i % 4].text_input(display_name, key=f'optional_text_{n}') 
+
+        # 4. Nút Tìm
+        if st.button("Tìm", use_container_width=True):
+            # Lọc các giá trị có nhập (không phải chuỗi trống)
             v = {k: val for k, val in inp.items() if val.strip()}
             if v:
                 df = search_data('manual', v)
@@ -484,10 +507,10 @@ def render_search(cols):
                         data=csv_manual,
                         file_name='ket_qua_tra_cuu_chi_tiet.csv',
                         mime='text/csv',
-                        key='download_manual'
+                        key='download_manual_t2' # Đổi key để tránh trùng với key trong t1
                     )
                 else: st.warning("Không thấy.")
-            else: st.warning("Nhập thông tin.")
+            else: st.warning("Vui lòng nhập ít nhất một thông tin để tìm kiếm.")
 
 def render_chatbot():
     st.subheader("🤖 Chatbot")
