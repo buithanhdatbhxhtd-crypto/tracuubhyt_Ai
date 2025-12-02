@@ -8,7 +8,8 @@ import time
 import os
 import zipfile
 import glob
-import pytz
+import pytz # Thư viện xử lý múi giờ
+import json
 
 # --- CẤU HÌNH ỨNG DỤNG ---
 st.set_page_config(
@@ -23,7 +24,7 @@ st.set_page_config(
 # ==============================================================================
 ZALO_PHONE_NUMBER = "0986053006" 
 
-# BHXH Tự Nguyện 2025
+# HẰNG SỐ TÍNH TOÁN BHXH 2025
 CHUAN_NGHEO = 1500000 
 LUONG_CO_SO = 2340000 
 MAX_MUC_DONG = 20 * LUONG_CO_SO 
@@ -33,7 +34,7 @@ HO_TRO_CAN_NGHEO = 0.40
 HO_TRO_DAN_TOC = 0.30   
 HO_TRO_KHAC = 0.20      
 
-# File dữ liệu
+# Tên file dữ liệu
 EXCEL_FILE = 'aaa.xlsb'
 DB_FILE = 'bhxh_data.db'
 ZIP_PART_PREFIX = 'bhxh_data.zip.' 
@@ -155,6 +156,7 @@ def log_action(username, action, details=""):
         db = get_firestore_db()
         if db:
             now_vn = get_vn_time()
+            # Lưu thêm trường date để dễ thống kê
             db.collection("logs").add({
                 "timestamp": now_vn.strftime("%Y-%m-%d %H:%M:%S"),
                 "date": now_vn.strftime("%Y-%m-%d"), 
@@ -184,8 +186,9 @@ def get_logs(limit=2000):
 
 def delete_all_logs():
     db = get_firestore_db()
-    if not db: return False
+    if not db: return 0
     try:
+        # Firestore xóa theo batch (từng đợt nhỏ)
         docs = db.collection("logs").limit(500).stream()
         count = 0
         for doc in docs:
@@ -227,10 +230,11 @@ def check_data():
         msg = st.empty()
         msg.info(f"📦 Đang ghép nối {len(parts)} phần dữ liệu...")
         try:
-            with open("bhxh_full.zip", 'wb') as outfile:
-                for part in parts: 
-                    with open(part, 'rb') as infile:
-                        outfile.write(infile.read())
+            # SỬA LỖI CÚ PHÁP Ở ĐÂY (Tách dòng lệnh)
+            with open("bhxh_full.zip", 'wb') as o:
+                for p in parts: 
+                    with open(p, 'rb') as i: 
+                        o.write(i.read())
             
             msg.info("📦 Đang giải nén dữ liệu...")
             with zipfile.ZipFile("bhxh_full.zip", 'r') as z: z.extractall()
@@ -286,7 +290,7 @@ def get_display_columns():
         c = conn.cursor()
         c.execute("PRAGMA table_info(bhxh)")
         # Lấy tên cột, loại bỏ các cột chỉ mục (bắt đầu bằng i_ hoặc là idx)
-        return [r[1] for r in c.fetchall() if not r[1].startswith('i_') and r[1] not in ['idx','index'] and 'kcb' not in r[1]]
+        return [r[1] for r in c.fetchall() if not r[1].startswith('i_') and r[1] != 'idx' and 'kcb' not in r[1] and r[1] != 'index']
     except: return []
     finally: conn.close()
 
@@ -374,7 +378,7 @@ def inject_custom_css():
 
 def render_zalo_widget():
     st.markdown(f"""
-    <a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z-widget">
+    <a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z-widget" title="Chat Zalo">
         <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%">
     </a>
     """, unsafe_allow_html=True)
@@ -687,8 +691,7 @@ def main():
             st.markdown("---")
             if st.button("Đăng xuất", use_container_width=True):
                 log_action(st.session_state['username'], "Logout")
-                st.session_state['logged_in'] = False
-                st.rerun()
+                st.session_state['logged_in'] = False; st.rerun()
 
         # Main Content Area
         page = st.session_state['page']
