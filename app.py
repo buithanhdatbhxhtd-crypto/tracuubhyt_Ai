@@ -37,7 +37,7 @@ st.set_page_config(
 # ==============================================================================
 # 🔑 CẤU HÌNH HỆ THỐNG
 # ==============================================================================
-HARDCODED_API_KEY = "AIzaSyBd6MNZdWTsJiTy1yrrWK4G2PsltqFV6eg" 
+HARDCODED_API_KEY = "AIzaSyD1k_wwyEHpYShu7qqb_D1vOgR83Bj6mXQ" 
 ZALO_PHONE_NUMBER = "0986053006" 
 
 # CÁC HẰNG SỐ TÍNH BHXH TỰ NGUYỆN (CẬP NHẬT 2025)
@@ -495,3 +495,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
