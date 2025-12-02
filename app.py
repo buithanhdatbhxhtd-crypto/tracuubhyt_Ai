@@ -170,35 +170,42 @@ def render_header():
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- TÍNH NĂNG THỜI TIẾT ---
-@st.cache_data(ttl=900) # Cache 15 phút để tránh gọi API quá nhiều
+# --- TÍNH NĂNG THỜI TIẾT (ĐÃ UPDATE TỌA ĐỘ) ---
+@st.cache_data(ttl=900) # Cache 15 phút
 def get_weather_data():
     try:
-        # Tìm kiếm theo tên "Dak Mil" (OpenWeatherMap dùng dữ liệu không dấu tốt hơn)
-        url = f"http://api.openweathermap.org/data/2.5/weather?q=Dak Mil&appid={OWM_API_KEY}&units=metric&lang=vi"
+        # Sử dụng tọa độ chính xác của Đắk Mil (khoảng 12.45, 107.62) để tránh lỗi tìm tên
+        lat = "12.4468"
+        lon = "107.6247"
+        # Dùng HTTPS để tránh bị chặn
+        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OWM_API_KEY}&units=metric&lang=vi"
+        
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             return response.json()
-    except:
-        return None
+        else:
+            return f"Error: {response.status_code}" # Trả về mã lỗi để debug
+    except Exception as e:
+        return str(e)
     return None
 
 def render_weather_widget():
     data = get_weather_data()
     
-    if data:
+    # Kiểm tra xem data có phải là dictionary (dữ liệu đúng) hay không
+    if isinstance(data, dict) and 'main' in data:
         temp = int(data['main']['temp'])
         desc = data['weather'][0]['description']
         icon_code = data['weather'][0]['icon']
         humidity = data['main']['humidity']
         wind = data['wind']['speed']
         
-        icon_url = f"http://openweathermap.org/img/wn/{icon_code}@2x.png"
+        icon_url = f"https://openweathermap.org/img/wn/{icon_code}@2x.png"
         
         st.markdown(f"""
             <div class="weather-widget">
-                <div style="font-weight: bold; margin-bottom: 5px;">📍 Huyện Đắk Mil (cũ)</div>
-                <div style="font-size: 0.8em; margin-bottom: 10px;">Tỉnh Đắk Nông (cũ)</div>
+                <div style="font-weight: bold; margin-bottom: 5px;">📍 Huyện Đắk Mil</div>
+                <div style="font-size: 0.8em; margin-bottom: 10px;">Tỉnh Đắk Nông</div>
                 <div style="display: flex; align-items: center; justify-content: center;">
                     <img src="{icon_url}" width="60">
                     <p class="weather-temp">{temp}°C</p>
@@ -210,7 +217,9 @@ def render_weather_widget():
             </div>
         """, unsafe_allow_html=True)
     else:
-        st.sidebar.warning("⚠️ Không cập nhật được thời tiết")
+        # Hiển thị lỗi chi tiết để dễ sửa
+        error_msg = data if isinstance(data, str) else "Lỗi kết nối"
+        st.sidebar.warning(f"⚠️ Thời tiết: {error_msg}")
 
 # --- XỬ LÝ DỮ LIỆU ---
 def clean_text(text): return unidecode.unidecode(str(text)).lower().replace(' ', '') if pd.notna(text) else ""
