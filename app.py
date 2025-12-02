@@ -370,14 +370,11 @@ def render_login():
             if st.form_submit_button("Đăng nhập", use_container_width=True):
                 r = verify_login(u, p)
                 if r: 
-                    # --- SỬA LỖI ĐĂNG NHẬP LOOP ---
-                    st.success("✅ Đăng nhập thành công! Đang vào hệ thống...")
                     st.session_state.update({'logged_in': True, 'username': u, 'role': r})
                     log_action(u, "Login", "Success")
-                    time.sleep(0.5) # Chờ 0.5s để session kịp lưu trước khi reload
                     st.rerun()
                 else: 
-                    st.error("❌ Sai tên đăng nhập hoặc mật khẩu")
+                    st.error("Sai thông tin đăng nhập")
 
 def render_change_password():
     st.subheader("🔒 Đổi Mật Khẩu")
@@ -429,15 +426,6 @@ def render_search(cols):
             
             if not df.empty:
                 st.success(f"✅ Tìm thấy {len(df)} kết quả")
-                # --- TÍNH NĂNG MỚI: TẢI KẾT QUẢ TÌM KIẾM ---
-                csv = df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button(
-                    label="📥 Tải kết quả (CSV)",
-                    data=csv,
-                    file_name=f"search_results_{int(time.time())}.csv",
-                    mime="text/csv",
-                )
-                # ---------------------------------------------
                 st.dataframe(df, use_container_width=True, hide_index=True)
             else: 
                 st.warning("⚠️ Không tìm thấy kết quả nào phù hợp.")
@@ -446,7 +434,7 @@ def render_search(cols):
 
 def render_admin():
     st.header("🛠️ Quản Trị Hệ Thống")
-    t1, t2 = st.tabs(["👤 Quản lý User", "📜 Nhật ký & Thống kê"])
+    t1, t2 = st.tabs(["👤 Quản lý User", "📜 Nhật ký hoạt động"])
     
     # --- TAB 1: USER ---
     with t1:
@@ -477,33 +465,16 @@ def render_admin():
                         st.success("Đã reset!"); log_action(st.session_state['username'], "Reset Pass", rs)
                     else: st.error("Lỗi")
 
-    # --- TAB 2: LOGS (NÂNG CẤP + THỐNG KÊ) ---
+    # --- TAB 2: LOGS (NÂNG CẤP) ---
     with t2:
+        st.subheader("Bộ lọc Nhật ký")
+        
         # 1. Fetch dữ liệu thô
         df_logs = get_logs_advanced(limit=1000) # Lấy 1000 logs gần nhất
         
         if not df_logs.empty:
             # Convert timestamp sang datetime để lọc
             df_logs['dt'] = pd.to_datetime(df_logs['timestamp'], format="%Y-%m-%d %H:%M:%S", errors='coerce')
-            
-            # --- PHẦN THỐNG KÊ (DASHBOARD) ---
-            st.subheader("📊 Thống Kê Hoạt Động")
-            col_chart1, col_chart2 = st.columns(2)
-            
-            with col_chart1:
-                st.caption("Top User Tích Cực Nhất")
-                user_counts = df_logs['username'].value_counts().head(5)
-                st.bar_chart(user_counts, color="#FF4B4B")
-                
-            with col_chart2:
-                st.caption("Xu Hướng Hoạt Động (Theo Ngày)")
-                daily_counts = df_logs['dt'].dt.date.value_counts().sort_index()
-                st.line_chart(daily_counts, color="#4BFF4B")
-            
-            st.divider()
-            # ---------------------------------
-
-            st.subheader("📋 Bộ lọc Nhật ký")
             
             # Cột lọc
             col_d1, col_d2, col_u, col_a = st.columns(4)
@@ -530,21 +501,9 @@ def render_admin():
                 
             filtered_df = df_logs.loc[mask]
             
-            # Hiển thị & Download
-            c_info, c_down = st.columns([3, 1])
-            c_info.info(f"Hiển thị {len(filtered_df)} dòng nhật ký.")
+            # Hiển thị
+            st.info(f"Hiển thị {len(filtered_df)} dòng nhật ký.")
             
-            # --- TÍNH NĂNG MỚI: DOWNLOAD LOGS ---
-            csv_logs = filtered_df[['timestamp', 'username', 'action', 'details']].to_csv(index=False).encode('utf-8-sig')
-            c_down.download_button(
-                label="📥 Tải Logs (CSV)",
-                data=csv_logs,
-                file_name=f"logs_export_{today}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-            # ------------------------------------
-
             # Checkbox chọn để xóa
             event = st.dataframe(
                 filtered_df[['timestamp', 'username', 'action', 'details']],
@@ -628,3 +587,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
