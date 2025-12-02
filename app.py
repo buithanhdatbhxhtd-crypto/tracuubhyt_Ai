@@ -116,54 +116,66 @@ st.markdown(f"""
 
     /* Calculator Style */
     .calc-container {{
-        background-color: #f1f1f1;
-        padding: 10px;
-        border-radius: 8px;
-        border: 1px solid #ccc;
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #ddd;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        max_width: 100%;
+        margin-bottom: 20px;
     }}
     .calc-display {{
         width: 100%;
-        height: 40px;
-        background: white;
-        border: 1px solid #999;
+        height: 50px;
+        background: #fff;
+        border: 2px solid #ccc;
         margin-bottom: 10px;
         text-align: right;
-        padding: 5px;
-        font-size: 1.2em;
-        font-family: monospace;
-        border-radius: 4px;
-        color: black;
+        padding: 10px;
+        font-size: 1.5em;
+        font-family: 'Courier New', monospace;
+        border-radius: 5px;
+        color: #333;
+        font-weight: bold;
     }}
     .calc-row {{
         display: flex;
         justify-content: space-between;
-        margin-bottom: 5px;
+        margin-bottom: 8px;
     }}
     .calc-btn {{
-        width: 23%;
-        padding: 10px 0;
+        width: 22%;
+        padding: 15px 0;
         font-weight: bold;
-        border: none;
-        border-radius: 4px;
+        font-size: 1.1em;
+        border: 1px solid #ccc;
+        border-radius: 8px;
         cursor: pointer;
         background-color: white;
         color: #333;
         box-shadow: 0 2px 2px rgba(0,0,0,0.1);
+        transition: background-color 0.2s;
     }}
     .calc-btn:hover {{
-        background-color: #e0e0e0;
+        background-color: #f0f0f0;
+    }}
+    .calc-btn:active {{
+        transform: translateY(2px);
     }}
     .calc-btn.op {{
         background-color: {BHXH_BLUE};
         color: white;
+        border-color: {BHXH_BLUE};
     }}
     .calc-btn.clear {{
         background-color: #d9534f;
         color: white;
+        border-color: #d9534f;
     }}
     .calc-btn.equal {{
         background-color: #5cb85c;
         color: white;
+        border-color: #5cb85c;
     }}
 
     /* Card/Container style */
@@ -251,40 +263,57 @@ def render_header():
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- TÍNH NĂNG ĐỒNG HỒ (NEW) ---
+# --- TÍNH NĂNG ĐỒNG HỒ (UTC+7 / HÀ NỘI) ---
 def render_clock():
-    st.sidebar.markdown(
+    st.markdown(
         """
-        <div style="background-color: #004470; color: white; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px; font-family: 'Courier New', monospace; border: 2px solid #e6f2ff; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
-            <div id="digital-clock" style="font-size: 1.8em; font-weight: bold; letter-spacing: 2px;">00:00:00</div>
-            <div id="date-display" style="font-size: 0.9em; margin-top: 5px; color: #ddd;">dd/mm/yyyy</div>
+        <div style="background-color: #004470; color: white; padding: 10px; border-radius: 10px; text-align: center; margin-bottom: 20px; font-family: 'Courier New', monospace; border: 2px solid #e6f2ff; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="font-size: 0.8em; color: #ccc; margin-bottom: 5px;">GIỜ VIỆT NAM (GMT+7)</div>
+            <div id="digital-clock" style="font-size: 2em; font-weight: bold; letter-spacing: 2px;">00:00:00</div>
+            <div id="date-display" style="font-size: 1.1em; margin-top: 5px; color: #ddd; font-weight: bold;">dd/mm/yyyy</div>
         </div>
         <script>
             function updateClock() {
+                // Lấy thời gian hiện tại
                 const now = new Date();
-                const time = now.toLocaleTimeString('vi-VN', { hour12: false });
-                const day = String(now.getDate()).padStart(2, '0');
-                const month = String(now.getMonth() + 1).padStart(2, '0');
-                const year = now.getFullYear();
+                
+                // Chuyển đổi sang múi giờ Asia/Ho_Chi_Minh (UTC+7)
+                const optionsTime = { 
+                    timeZone: 'Asia/Ho_Chi_Minh', 
+                    hour12: false, 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit' 
+                };
+                const optionsDate = {
+                    timeZone: 'Asia/Ho_Chi_Minh',
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                };
+                
+                const timeString = now.toLocaleTimeString('en-GB', optionsTime);
+                const dateString = now.toLocaleDateString('en-GB', optionsDate);
                 
                 const clockDiv = document.getElementById('digital-clock');
                 const dateDiv = document.getElementById('date-display');
                 
-                if (clockDiv) clockDiv.innerHTML = time;
-                if (dateDiv) dateDiv.innerHTML = `${day}/${month}/${year}`;
+                if (clockDiv) clockDiv.innerHTML = timeString;
+                if (dateDiv) dateDiv.innerHTML = dateString;
             }
+            // Cập nhật mỗi giây
             setInterval(updateClock, 1000);
-            updateClock();
+            updateClock(); // Chạy ngay lập tức
         </script>
         """,
         unsafe_allow_html=True
     )
 
-# --- TÍNH NĂNG MÁY TÍNH (NEW) ---
+# --- TÍNH NĂNG MÁY TÍNH (FIX LỖI NHẬP LIỆU) ---
 def render_calculator_widget():
-    with st.sidebar.expander("🧮 Máy tính cá nhân", expanded=False):
-        # Sử dụng HTML/JS thuần để tạo máy tính không cần reload trang
-        st.markdown("""
+    st.markdown("""
+        <div style="margin-top: 20px;">
+            <h4 style="color: #005b96; text-align: center;">🧮 Máy tính cá nhân</h4>
             <div class="calc-container">
                 <input type="text" id="calc-display" class="calc-display" readonly>
                 <div class="calc-row">
@@ -309,15 +338,17 @@ def render_calculator_widget():
                     <button class="calc-btn" onclick="document.getElementById('calc-display').value += '1'">1</button>
                     <button class="calc-btn" onclick="document.getElementById('calc-display').value += '2'">2</button>
                     <button class="calc-btn" onclick="document.getElementById('calc-display').value += '3'">3</button>
-                    <button class="calc-btn equal" onclick="try{document.getElementById('calc-display').value = eval(document.getElementById('calc-display').value)}catch(e){document.getElementById('calc-display').value = 'Error'}" style="height: 100%; grid-row: span 2;">=</button>
+                    <button class="calc-btn equal" onclick="try{document.getElementById('calc-display').value = eval(document.getElementById('calc-display').value)}catch(e){document.getElementById('calc-display').value = 'Error'}" style="height: auto; grid-row: span 2;">=</button>
                 </div>
                 <div class="calc-row" style="margin-bottom:0">
                     <button class="calc-btn" onclick="document.getElementById('calc-display').value += '0'" style="width: 48%">0</button>
                     <button class="calc-btn" onclick="document.getElementById('calc-display').value += '.'">.</button>
-                    <button class="calc-btn" style="visibility:hidden"></button> 
+                    <!-- Empty placeholder for alignment -->
+                    <div style="width: 22%"></div> 
                 </div>
             </div>
-        """, unsafe_allow_html=True)
+        </div>
+    """, unsafe_allow_html=True)
 
 # --- TÍNH NĂNG THỜI TIẾT (FIX LỖI ENCODING & 401) ---
 @st.cache_data(ttl=900) # Cache 15 phút
@@ -378,7 +409,7 @@ def render_weather_widget():
             </div>
         """, unsafe_allow_html=True)
     else:
-        st.sidebar.warning("⚠️ Đang cập nhật dữ liệu...")
+        st.warning("⚠️ Đang cập nhật dữ liệu...")
 
 # --- XỬ LÝ DỮ LIỆU ---
 def clean_text(text): return unidecode.unidecode(str(text)).lower().replace(' ', '') if pd.notna(text) else ""
@@ -791,24 +822,15 @@ def main():
     ok, msg = check_and_prepare_data()
     if not ok: st.error(msg); return
     
-    # Sidebar
+    # ---------------- SIDEBAR (CHỈ CÒN MENU) ----------------
     with st.sidebar:
-        # Hiển thị Đồng hồ (Mới)
-        render_clock()
-        
-        # Hiển thị Widget Thời tiết ở đầu Sidebar
-        render_weather_widget()
-        
-        # Hiển thị Máy tính (Mới)
-        render_calculator_widget()
-        
         st.title("MENU CHỨC NĂNG")
         st.markdown("---")
         
         # 1. Tra cứu
         if st.button("🔍 Tra cứu CSDL", use_container_width=True): st.session_state['page'] = 'search'
         
-        # 2. Tin tức (Nổi bật - Được đưa lên trên)
+        # 2. Tin tức
         if st.button("🔥 Tin tức BHXH (HOT)", use_container_width=True): st.session_state['page'] = 'news'
         
         # 3. Các công cụ tính toán
@@ -816,23 +838,37 @@ def main():
         if st.button("🏥 Tính BHYT Hộ Gia Đình", use_container_width=True): st.session_state['page'] = 'bhyt'
         if st.button("👵 Tính Tuổi Nghỉ Hưu", use_container_width=True): st.session_state['page'] = 'retirement'
         
-        # 4. Thống kê (Ít dùng - Đưa xuống cuối)
+        # 4. Thống kê
         st.markdown("---")
         if st.button("📊 Thống kê Dữ liệu", use_container_width=True): st.session_state['page'] = 'stats'
         
         st.markdown("---")
         st.info("Hệ thống hỗ trợ tra cứu và tính toán BHXH, BHYT mới nhất.")
 
-    # Router
-    p = st.session_state['page']
-    if p == 'search': 
-        cols = get_display_columns()
-        if cols: render_search(cols)
-    elif p == 'stats': render_statistics()
-    elif p == 'news': render_news()
-    elif p == 'calc': render_calculator()
-    elif p == 'bhyt': render_bhyt_calculator()
-    elif p == 'retirement': render_retirement_calculator()
+    # ---------------- MAIN CONTENT LAYOUT ----------------
+    # Chia màn hình thành 2 cột: 
+    # Cột trái (content_col): 75% - Hiển thị chức năng chính
+    # Cột phải (widget_col): 25% - Hiển thị tiện ích (Đồng hồ, Thời tiết, Máy tính)
+    content_col, widget_col = st.columns([3, 1])
+
+    # --- CỘT PHẢI: TIỆN ÍCH ---
+    with widget_col:
+        st.markdown("### 🛠️ Tiện ích")
+        render_clock()             # Đồng hồ (đã chỉnh UTC+7)
+        render_weather_widget()    # Thời tiết
+        render_calculator_widget() # Máy tính (đã fix lỗi nhập liệu)
+
+    # --- CỘT TRÁI: NỘI DUNG CHÍNH ---
+    with content_col:
+        p = st.session_state['page']
+        if p == 'search': 
+            cols = get_display_columns()
+            if cols: render_search(cols)
+        elif p == 'stats': render_statistics()
+        elif p == 'news': render_news()
+        elif p == 'calc': render_calculator()
+        elif p == 'bhyt': render_bhyt_calculator()
+        elif p == 'retirement': render_retirement_calculator()
 
 if __name__ == '__main__':
     main()
