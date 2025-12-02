@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN GOOGLE GEMINI FREE) ---
+# --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN GOOGLE GEMINI FREE + AUTO FIX) ---
 import streamlit as st
 import streamlit.components.v1 as components 
 import pandas as pd
@@ -105,7 +105,7 @@ def render_header():
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- 1. CHỨC NĂNG AI: CHATBOT (GEMINI) ---
+# --- 1. CHỨC NĂNG AI: CHATBOT (GEMINI AUTO-FALLBACK) ---
 def render_chatbot_ai():
     st.subheader("🤖 Trợ lý AI Chuyên gia BHXH (Google Gemini)")
     st.caption("Hỏi đáp mọi vấn đề về Luật BHXH, BHYT, chế độ thai sản, ốm đau, hưu trí...")
@@ -115,7 +115,7 @@ def render_chatbot_ai():
         st.markdown("[Lấy Key miễn phí tại đây](https://aistudio.google.com/app/apikey)")
         return
 
-    # Khởi tạo lịch sử chat (Format của Gemini khác OpenAI)
+    # Khởi tạo lịch sử chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -132,29 +132,44 @@ def render_chatbot_ai():
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             full_response = ""
-            try:
-                # Cấu hình model Gemini
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                
-                # Tạo prompt context
-                system_prompt = "Bạn là chuyên gia tư vấn BHXH/BHYT Việt Nam. Trả lời ngắn gọn, chính xác, thân thiện."
-                full_prompt = f"{system_prompt}\n\nUser: {prompt}"
-                
-                # Gọi API (Stream)
-                response = model.generate_content(full_prompt, stream=True)
-                
-                for chunk in response:
-                    if chunk.text:
-                        full_response += chunk.text
-                        message_placeholder.markdown(full_response + "▌")
-                message_placeholder.markdown(full_response)
-                
-                st.session_state.messages.append({"role": "model", "content": full_response})
-                
-            except Exception as e:
-                st.error(f"Lỗi kết nối Google AI: {str(e)}")
+            
+            # --- CƠ CHẾ TỰ ĐỘNG CHUYỂN MODEL KHI LỖI ---
+            # Danh sách ưu tiên: Flash (nhanh) -> Pro (ổn định) -> 1.5 Pro (mạnh)
+            models_to_try = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro']
+            success = False
+            last_error = ""
 
-# --- 2. CHỨC NĂNG AI: VIẾT BÀI TUYÊN TRUYỀN (GEMINI) ---
+            for model_name in models_to_try:
+                try:
+                    # Cấu hình model
+                    model = genai.GenerativeModel(model_name)
+                    
+                    # Tạo prompt context
+                    system_prompt = "Bạn là chuyên gia tư vấn BHXH/BHYT Việt Nam. Trả lời ngắn gọn, chính xác, thân thiện."
+                    full_prompt = f"{system_prompt}\n\nUser: {prompt}"
+                    
+                    # Gọi API (Stream)
+                    response = model.generate_content(full_prompt, stream=True)
+                    
+                    for chunk in response:
+                        if chunk.text:
+                            full_response += chunk.text
+                            message_placeholder.markdown(full_response + "▌")
+                    
+                    # Nếu chạy đến đây mà không lỗi thì thoát vòng lặp
+                    success = True
+                    break 
+                except Exception as e:
+                    last_error = str(e)
+                    continue # Thử model tiếp theo
+            
+            if success:
+                message_placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "model", "content": full_response})
+            else:
+                st.error(f"⚠️ Hệ thống AI đang bận hoặc lỗi kết nối. Vui lòng thử lại sau giây lát.\nChi tiết lỗi: {last_error}")
+
+# --- 2. CHỨC NĂNG AI: VIẾT BÀI TUYÊN TRUYỀN (GEMINI AUTO-FALLBACK) ---
 def render_content_creator():
     st.subheader("✍️ AI Viết Bài Tuyên Truyền (Google Gemini)")
     
@@ -177,7 +192,11 @@ def render_content_creator():
         
         try:
             with st.spinner("AI đang viết bài..."):
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                # --- CƠ CHẾ TỰ ĐỘNG CHUYỂN MODEL ---
+                models_to_try = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro']
+                result_text = ""
+                success = False
+                
                 prompt_content = f"""
                 Đóng vai chuyên viên truyền thông BHXH Việt Nam.
                 Viết bài tuyên truyền về: {topic}.
@@ -186,9 +205,23 @@ def render_content_creator():
                 Giọng văn: {tone}.
                 Yêu cầu: Hấp dẫn, nhiều emoji, có hashtag, kêu gọi hành động.
                 """
-                response = model.generate_content(prompt_content)
-                st.success("Đã tạo xong!")
-                st.text_area("Nội dung:", value=response.text, height=400)
+
+                for model_name in models_to_try:
+                    try:
+                        model = genai.GenerativeModel(model_name)
+                        response = model.generate_content(prompt_content)
+                        result_text = response.text
+                        success = True
+                        break
+                    except:
+                        continue
+                
+                if success:
+                    st.success("Đã tạo xong!")
+                    st.text_area("Nội dung:", value=result_text, height=400)
+                else:
+                    st.error("⚠️ Không thể kết nối đến máy chủ AI lúc này. Vui lòng thử lại.")
+                    
         except Exception as e:
             st.error(f"Lỗi: {e}")
 
