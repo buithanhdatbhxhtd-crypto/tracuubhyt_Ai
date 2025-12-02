@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN AI SECURE + DEMO MODE) ---
+# --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN GOOGLE GEMINI FREE) ---
 import streamlit as st
 import streamlit.components.v1 as components 
 import pandas as pd
@@ -13,11 +13,11 @@ import requests
 from datetime import date, timedelta, datetime
 from dateutil.relativedelta import relativedelta
 
-# --- THƯ VIỆN AI ---
+# --- THƯ VIỆN AI (GOOGLE GEMINI) ---
 try:
-    from openai import OpenAI
+    import google.generativeai as genai
 except ImportError:
-    st.error("Chưa cài đặt thư viện OpenAI. Vui lòng kiểm tra requirements.txt")
+    st.error("Chưa cài đặt thư viện Google AI. Vui lòng thêm 'google-generativeai' vào requirements.txt")
     st.stop()
 
 # --- CẤU HÌNH ỨNG DỤNG ---
@@ -29,18 +29,17 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# 🔑 CẤU HÌNH BẢO MẬT (QUAN TRỌNG)
+# 🔑 CẤU HÌNH BẢO MẬT (GOOGLE API)
 # ==============================================================================
-def get_openai_client():
-    # Lấy API Key từ Secrets của Streamlit Cloud (An toàn tuyệt đối)
-    api_key = st.secrets.get("OPENAI_API_KEY")
-    
+def configure_google_ai():
+    # Lấy API Key từ Secrets (Tên biến: GOOGLE_API_KEY)
+    api_key = st.secrets.get("GOOGLE_API_KEY")
     if not api_key:
-        return None
-    return OpenAI(api_key=api_key)
+        return False
+    genai.configure(api_key=api_key)
+    return True
 
 ZALO_PHONE_NUMBER = "0986053006"
-# Các API Key công khai (ít rủi ro hơn) có thể để đây hoặc đưa vào Secrets
 OWM_API_KEY = "3ec0c3bf9ff1be61e3c94060a1037713" 
 NEWS_API_KEY = "39779fb4a0634d8fbfb86e2668d955e0"
 
@@ -100,33 +99,31 @@ def render_header():
         try: st.image("https://upload.wikimedia.org/wikipedia/vi/thumb/a/a2/Logo_BHXH_VN.png/300px-Logo_BHXH_VN.png", width=100)
         except: st.warning("Logo Error") 
     with c2:
-        st.markdown(f"""<div style="padding-top: 10px;"><h1 style="margin:0; font-size: 2rem;">HỆ THỐNG TRA CỨU & TÍNH TOÁN BHXH</h1><p style="margin:0; color: #666;">Cổng thông tin tiện ích hỗ trợ người dân (Tích hợp AI)</p></div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div style="padding-top: 10px;"><h1 style="margin:0; font-size: 2rem;">HỆ THỐNG TRA CỨU & TÍNH TOÁN BHXH</h1><p style="margin:0; color: #666;">Cổng thông tin tiện ích hỗ trợ người dân (Tích hợp Google AI)</p></div>""", unsafe_allow_html=True)
     st.markdown(f"""<div class="marquee-container"><div class="marquee-text">BẢO HIỂM XÃ HỘI VIỆT NAM - TẤT CẢ VÌ AN SINH XÃ HỘI, VÌ NGƯỜI THAM GIA BHXH, BHYT &#127483;&#127475;</div></div>""", unsafe_allow_html=True)
 
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- 1. CHỨC NĂNG AI: CHATBOT (CÓ FALLBACK) ---
+# --- 1. CHỨC NĂNG AI: CHATBOT (GEMINI) ---
 def render_chatbot_ai():
-    st.subheader("🤖 Trợ lý AI Chuyên gia BHXH")
+    st.subheader("🤖 Trợ lý AI Chuyên gia BHXH (Google Gemini)")
     st.caption("Hỏi đáp mọi vấn đề về Luật BHXH, BHYT, chế độ thai sản, ốm đau, hưu trí...")
 
-    client = get_openai_client()
-    if not client:
-        st.warning("⚠️ Chưa cấu hình API Key. Vui lòng vào Settings -> Secrets trên Streamlit Cloud để thêm 'OPENAI_API_KEY'.")
-        st.info("Hướng dẫn: Mở App trên Cloud > 3 chấm > Settings > Secrets > Dán: OPENAI_API_KEY = 'sk-...'")
+    if not configure_google_ai():
+        st.warning("⚠️ Chưa cấu hình API Key. Vui lòng vào Settings -> Secrets trên Streamlit Cloud để thêm 'GOOGLE_API_KEY'.")
+        st.markdown("[Lấy Key miễn phí tại đây](https://aistudio.google.com/app/apikey)")
         return
 
-    # Khởi tạo lịch sử chat
+    # Khởi tạo lịch sử chat (Format của Gemini khác OpenAI)
     if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "system", "content": "Bạn là một chuyên gia tư vấn pháp luật về Bảo hiểm xã hội (BHXH) và Bảo hiểm y tế (BHYT) tại Việt Nam. Bạn trả lời ngắn gọn, chính xác, trích dẫn luật nếu cần thiết và luôn thân thiện."}
-        ]
+        st.session_state.messages = []
 
+    # Hiển thị lịch sử
     for message in st.session_state.messages:
-        if message["role"] != "system":
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        role = "user" if message["role"] == "user" else "assistant"
+        with st.chat_message(role):
+            st.markdown(message["content"])
 
     if prompt := st.chat_input("Nhập câu hỏi..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -136,37 +133,33 @@ def render_chatbot_ai():
             message_placeholder = st.empty()
             full_response = ""
             try:
-                stream = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=st.session_state.messages,
-                    stream=True,
-                )
-                for chunk in stream:
-                    if chunk.choices[0].delta.content is not None:
-                        full_response += chunk.choices[0].delta.content
+                # Cấu hình model Gemini
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                # Tạo prompt context
+                system_prompt = "Bạn là chuyên gia tư vấn BHXH/BHYT Việt Nam. Trả lời ngắn gọn, chính xác, thân thiện."
+                full_prompt = f"{system_prompt}\n\nUser: {prompt}"
+                
+                # Gọi API (Stream)
+                response = model.generate_content(full_prompt, stream=True)
+                
+                for chunk in response:
+                    if chunk.text:
+                        full_response += chunk.text
                         message_placeholder.markdown(full_response + "▌")
                 message_placeholder.markdown(full_response)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                
+                st.session_state.messages.append({"role": "model", "content": full_response})
+                
             except Exception as e:
-                # XỬ LÝ LỖI 429/QUOTA ĐỂ KHÔNG BỊ CRASH
-                error_msg = str(e)
-                if "insufficient_quota" in error_msg or "429" in error_msg:
-                    st.warning("⚠️ **Lưu ý:** Tài khoản OpenAI API đã hết hạn mức (hết tiền). Hệ thống đang chuyển sang chế độ trả lời mẫu (Demo Mode).")
-                    
-                    fallback_response = "Chào bạn! Hiện tại kết nối đến trí tuệ nhân tạo (AI) đang bị gián đoạn do hết hạn mức sử dụng.\n\nTuy nhiên, với câu hỏi của bạn, tôi xin đưa ra thông tin tham khảo chung:\n\n- Nếu bạn hỏi về **BHXH tự nguyện**: Mức đóng là 22% mức thu nhập lựa chọn.\n- Nếu bạn hỏi về **BHYT hộ gia đình**: Mức đóng giảm dần (Người thứ nhất 100%, thứ hai 70%...).\n\nBạn vui lòng nạp thêm tín dụng vào tài khoản OpenAI để tiếp tục sử dụng tính năng Chatbot thông minh này nhé! 😊"
-                    
-                    message_placeholder.markdown(fallback_response)
-                    st.session_state.messages.append({"role": "assistant", "content": fallback_response})
-                else:
-                    st.error(f"Lỗi kết nối AI: {str(e)}")
+                st.error(f"Lỗi kết nối Google AI: {str(e)}")
 
-# --- 2. CHỨC NĂNG AI: VIẾT BÀI TUYÊN TRUYỀN (CÓ FALLBACK) ---
+# --- 2. CHỨC NĂNG AI: VIẾT BÀI TUYÊN TRUYỀN (GEMINI) ---
 def render_content_creator():
-    st.subheader("✍️ AI Viết Bài Tuyên Truyền")
+    st.subheader("✍️ AI Viết Bài Tuyên Truyền (Google Gemini)")
     
-    client = get_openai_client()
-    if not client:
-        st.warning("⚠️ Chưa cấu hình API Key trong Secrets.")
+    if not configure_google_ai():
+        st.warning("⚠️ Chưa cấu hình GOOGLE_API_KEY.")
         return
 
     c1, c2 = st.columns([1, 1])
@@ -184,44 +177,20 @@ def render_content_creator():
         
         try:
             with st.spinner("AI đang viết bài..."):
-                prompt_content = f"Viết bài tuyên truyền BHXH/BHYT. Chủ đề: {topic}. Đối tượng: {target_audience}. Nền tảng: {platform}. Giọng: {tone}. Yêu cầu: Hấp dẫn, nhiều emoji, có hashtag."
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": prompt_content}]
-                )
-                content = response.choices[0].message.content
-                st.success("Đã tạo xong!")
-                st.text_area("Nội dung:", value=content, height=400)
-        except Exception as e:
-            # XỬ LÝ LỖI 429/QUOTA: TẠO BÀI VIẾT MẪU
-            error_msg = str(e)
-            if "insufficient_quota" in error_msg or "429" in error_msg:
-                st.warning("⚠️ **Lưu ý:** API Key hết hạn mức. Đây là bài viết mẫu được tạo tự động (Chế độ Demo):")
-                
-                mock_content = f"""
-🌟 **{topic.upper()} - VÌ LỢI ÍCH CỦA BẠN!** 🌟
-
-👋 Xin chào các bạn, đặc biệt là {target_audience}!
-
-Hôm nay, mình muốn chia sẻ một chút về chủ đề: **{topic}**.
-Bạn có biết rằng tham gia BHXH, BHYT chính là "tấm khiên" bảo vệ vững chắc nhất cho bản thân và gia đình trước những rủi ro trong cuộc sống?
-
-✅ **Lợi ích mang lại:**
-- 🏥 Được chăm sóc sức khỏe với chi phí thấp nhất.
-- 💰 Tích lũy thời gian để hưởng lương hưu an nhàn.
-- 🛡️ Được nhà nước bảo hộ quyền lợi.
-
-💡 **Đừng chần chừ!** Hãy tham gia ngay hôm nay. Mức đóng rất linh hoạt và phù hợp với mọi người.
-
-👉 Liên hệ ngay cơ quan BHXH gần nhất hoặc đại lý thu bưu điện để được tư vấn nhé!
-
---------------------
-#BHXH #BHYT #BaoHiemXaHoi #AnSinhXaHoi #{topic.replace(" ", "")}
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                prompt_content = f"""
+                Đóng vai chuyên viên truyền thông BHXH Việt Nam.
+                Viết bài tuyên truyền về: {topic}.
+                Đối tượng: {target_audience}.
+                Nền tảng: {platform}.
+                Giọng văn: {tone}.
+                Yêu cầu: Hấp dẫn, nhiều emoji, có hashtag, kêu gọi hành động.
                 """
-                st.success("Đã tạo nội dung mẫu (Demo Mode)!")
-                st.text_area("Nội dung:", value=mock_content, height=400)
-            else:
-                st.error(f"Lỗi: {e}")
+                response = model.generate_content(prompt_content)
+                st.success("Đã tạo xong!")
+                st.text_area("Nội dung:", value=response.text, height=400)
+        except Exception as e:
+            st.error(f"Lỗi: {e}")
 
 # --- TIỆN ÍCH ---
 def render_clock():
