@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN AI SMART) ---
+# --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN AI SECURE) ---
 import streamlit as st
 import streamlit.components.v1 as components 
 import pandas as pd
@@ -13,11 +13,11 @@ import requests
 from datetime import date, timedelta, datetime
 from dateutil.relativedelta import relativedelta
 
-# --- THƯ VIỆN AI (NEW) ---
+# --- THƯ VIỆN AI ---
 try:
     from openai import OpenAI
 except ImportError:
-    st.error("Chưa cài đặt thư viện OpenAI. Vui lòng chạy lệnh: pip install openai")
+    st.error("Chưa cài đặt thư viện OpenAI. Vui lòng kiểm tra requirements.txt")
     st.stop()
 
 # --- CẤU HÌNH ỨNG DỤNG ---
@@ -29,21 +29,18 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# 🔑 CẤU HÌNH BẢO MẬT & API (AI INTEGRATION)
+# 🔑 CẤU HÌNH BẢO MẬT (QUAN TRỌNG)
 # ==============================================================================
-# Để bảo mật tối đa, nên lưu key trong .streamlit/secrets.toml
-# Tuy nhiên, code dưới đây hỗ trợ chạy ngay lập tức với key bạn cung cấp.
 def get_openai_client():
-    # Key dự phòng (Hardcoded as requested)
-    # Lưu ý: Không chia sẻ file code này công khai khi có key thật.
-    FALLBACK_KEY = "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"
+    # Lấy API Key từ Secrets của Streamlit Cloud (An toàn tuyệt đối)
+    api_key = st.secrets.get("OPENAI_API_KEY")
     
-    # Ưu tiên lấy từ Secrets (nếu có), nếu không thì dùng key dự phòng
-    api_key = st.secrets.get("OPENAI_API_KEY", FALLBACK_KEY)
-    
+    if not api_key:
+        return None
     return OpenAI(api_key=api_key)
 
 ZALO_PHONE_NUMBER = "0986053006"
+# Các API Key công khai (ít rủi ro hơn) có thể để đây hoặc đưa vào Secrets
 OWM_API_KEY = "3ec0c3bf9ff1be61e3c94060a1037713" 
 NEWS_API_KEY = "39779fb4a0634d8fbfb86e2668d955e0"
 
@@ -87,6 +84,7 @@ st.markdown(f"""
     .news-title {{ font-weight: bold; color: {BHXH_BLUE}; font-size: 1.1em; text-decoration: none; }}
     .news-meta {{ font-size: 0.85em; color: #666; margin-top: 5px; }}
     .weather-widget {{ background: linear-gradient(135deg, #005b96 0%, #0082c8 100%); color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }}
+    .weather-temp {{ font-size: 2.5em; font-weight: bold; margin: 0; }}
     
     /* Sidebar & Button */
     [data-testid="stSidebar"] {{ background-color: {BHXH_LIGHT_BLUE}; border-right: 1px solid #ddd; }}
@@ -108,42 +106,38 @@ def render_header():
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- 1. CHỨC NĂNG AI: CHATBOT (NEW) ---
+# --- 1. CHỨC NĂNG AI: CHATBOT ---
 def render_chatbot_ai():
     st.subheader("🤖 Trợ lý AI Chuyên gia BHXH")
     st.caption("Hỏi đáp mọi vấn đề về Luật BHXH, BHYT, chế độ thai sản, ốm đau, hưu trí...")
 
-    # Khởi tạo client OpenAI
-    try:
-        client = get_openai_client()
-    except Exception as e:
-        st.error(f"Lỗi kết nối API: {e}")
+    client = get_openai_client()
+    if not client:
+        st.warning("⚠️ Chưa cấu hình API Key. Vui lòng vào Settings -> Secrets trên Streamlit Cloud để thêm 'OPENAI_API_KEY'.")
+        st.info("Hướng dẫn: Mở App trên Cloud > 3 chấm > Settings > Secrets > Dán: OPENAI_API_KEY = 'sk-...'")
         return
 
     # Khởi tạo lịch sử chat
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            {"role": "system", "content": "Bạn là một chuyên gia tư vấn pháp luật về Bảo hiểm xã hội (BHXH) và Bảo hiểm y tế (BHYT) tại Việt Nam. Bạn trả lời ngắn gọn, chính xác, trích dẫn luật nếu cần thiết và luôn thân thiện. Không trả lời các vấn đề ngoài phạm vi bảo hiểm, an sinh xã hội."}
+            {"role": "system", "content": "Bạn là một chuyên gia tư vấn pháp luật về Bảo hiểm xã hội (BHXH) và Bảo hiểm y tế (BHYT) tại Việt Nam. Bạn trả lời ngắn gọn, chính xác, trích dẫn luật nếu cần thiết và luôn thân thiện."}
         ]
 
-    # Hiển thị lịch sử (trừ system prompt)
     for message in st.session_state.messages:
         if message["role"] != "system":
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    # Xử lý input
-    if prompt := st.chat_input("Nhập câu hỏi của bạn (ví dụ: Mức hưởng chế độ thai sản 2025?)..."):
+    if prompt := st.chat_input("Nhập câu hỏi..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        with st.chat_message("user"): st.markdown(prompt)
 
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             full_response = ""
             try:
                 stream = client.chat.completions.create(
-                    model="gpt-4o-mini", # Sử dụng model nhanh và tiết kiệm
+                    model="gpt-4o-mini",
                     messages=st.session_state.messages,
                     stream=True,
                 )
@@ -154,61 +148,44 @@ def render_chatbot_ai():
                 message_placeholder.markdown(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
             except Exception as e:
-                st.error(f"Lỗi khi gọi AI: {str(e)}. Vui lòng kiểm tra lại API Key hoặc hạn mức.")
+                st.error(f"Lỗi AI: {str(e)}")
 
-# --- 2. CHỨC NĂNG AI: VIẾT BÀI TUYÊN TRUYỀN (NEW) ---
+# --- 2. CHỨC NĂNG AI: VIẾT BÀI TUYÊN TRUYỀN ---
 def render_content_creator():
     st.subheader("✍️ AI Viết Bài Tuyên Truyền")
-    st.caption("Tạo nội dung hấp dẫn để đăng Facebook, Zalo vận động người dân tham gia BHXH/BHYT.")
+    
+    client = get_openai_client()
+    if not client:
+        st.warning("⚠️ Chưa cấu hình API Key trong Secrets.")
+        return
 
     c1, c2 = st.columns([1, 1])
     with c1:
-        topic = st.text_input("Chủ đề bài viết:", placeholder="Ví dụ: Lợi ích của BHXH tự nguyện khi về già")
-        target_audience = st.selectbox("Đối tượng người đọc:", ["Người lao động tự do", "Học sinh sinh viên", "Người nội trợ", "Doanh nghiệp", "Toàn dân"])
+        topic = st.text_input("Chủ đề bài viết:", placeholder="Ví dụ: Lợi ích BHYT học sinh sinh viên")
+        target_audience = st.selectbox("Đối tượng:", ["Người lao động", "Học sinh sinh viên", "Người nội trợ", "Doanh nghiệp", "Toàn dân"])
     with c2:
-        platform = st.selectbox("Đăng lên nền tảng:", ["Facebook (Thân thiện, icon)", "Zalo (Ngắn gọn, trang trọng)", "Website (Chi tiết, chuẩn mực)"])
+        platform = st.selectbox("Nền tảng:", ["Facebook", "Zalo", "Website"])
         tone = st.select_slider("Giọng văn:", options=["Nghiêm túc", "Vừa phải", "Hài hước/Bắt trend"], value="Vừa phải")
 
     if st.button("🚀 Tạo nội dung ngay", type="primary"):
         if not topic:
-            st.warning("Vui lòng nhập chủ đề bài viết.")
+            st.warning("Vui lòng nhập chủ đề.")
             return
         
         try:
-            client = get_openai_client()
-            with st.spinner("AI đang suy nghĩ và viết bài..."):
-                prompt_content = f"""
-                Hãy viết một bài đăng để vận động tuyên truyền về BHXH/BHYT.
-                - Chủ đề: {topic}
-                - Đối tượng: {target_audience}
-                - Nền tảng đăng: {platform}
-                - Giọng văn: {tone}
-                
-                Yêu cầu:
-                - Bài viết phải hấp dẫn, khơi gợi cảm xúc.
-                - Sử dụng nhiều biểu tượng cảm xúc (emoji) phù hợp.
-                - Có lời kêu gọi hành động (Call to Action) rõ ràng.
-                - Thêm các hashtag phổ biến liên quan đến BHXH cuối bài.
-                - Nếu là Zalo thì ngắn gọn, Facebook thì có thể dài hơn chút và engaging hơn.
-                """
-                
+            with st.spinner("AI đang viết bài..."):
+                prompt_content = f"Viết bài tuyên truyền BHXH/BHYT. Chủ đề: {topic}. Đối tượng: {target_audience}. Nền tảng: {platform}. Giọng: {tone}. Yêu cầu: Hấp dẫn, nhiều emoji, có hashtag."
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "Bạn là chuyên viên truyền thông xuất sắc của Bảo hiểm xã hội Việt Nam."},
-                        {"role": "user", "content": prompt_content}
-                    ]
+                    messages=[{"role": "user", "content": prompt_content}]
                 )
                 content = response.choices[0].message.content
-                
-                st.success("Đã tạo xong nội dung!")
-                st.text_area("Sao chép nội dung bên dưới:", value=content, height=400)
+                st.success("Đã tạo xong!")
+                st.text_area("Nội dung:", value=content, height=400)
         except Exception as e:
-            st.error(f"Không thể tạo nội dung: {e}")
+            st.error(f"Lỗi: {e}")
 
-# --- CÁC CHỨC NĂNG CŨ GIỮ NGUYÊN ---
-# ... (Đồng hồ, Máy tính, Thời tiết, Tra cứu, Tính toán...)
-
+# --- TIỆN ÍCH ---
 def render_clock():
     components.html("""<!DOCTYPE html><html><head><style>body{margin:0;font-family:'Arial',sans-serif;background-color:transparent}.clock-container{background-color:#004470;color:white;padding:15px;border-radius:10px;text-align:center;border:2px solid #e6f2ff;box-shadow:0 2px 5px rgba(0,0,0,0.1);display:flex;flex-direction:column;justify-content:center;height:100px}.clock-title{font-size:12px;color:#ccc;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px}.clock-time{font-size:32px;font-weight:bold;letter-spacing:2px;line-height:1;font-family:'Courier New',monospace}.clock-date{font-size:14px;margin-top:5px;color:#ddd;font-weight:bold}</style></head><body><div class="clock-container"><div class="clock-title">GIỜ VIỆT NAM (GMT+7)</div><div id="digital-clock" class="clock-time">00:00:00</div><div id="date-display" class="clock-date">dd/mm/yyyy</div></div><script>function updateClock(){const now=new Date();const optionsTime={timeZone:'Asia/Ho_Chi_Minh',hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'};const optionsDate={timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'};try{const timeString=now.toLocaleTimeString('en-GB',optionsTime);const dateString=now.toLocaleDateString('en-GB',optionsDate);document.getElementById('digital-clock').innerHTML=timeString;document.getElementById('date-display').innerHTML=dateString}catch(e){document.getElementById('digital-clock').innerHTML="Loading..."}}setInterval(updateClock,1000);updateClock();</script></body></html>""", height=140)
 
