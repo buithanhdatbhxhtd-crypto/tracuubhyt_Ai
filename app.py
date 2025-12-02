@@ -678,12 +678,21 @@ def main():
         
         st.title("MENU CHỨC NĂNG")
         st.markdown("---")
+        
+        # 1. Tra cứu
         if st.button("🔍 Tra cứu CSDL", use_container_width=True): st.session_state['page'] = 'search'
-        if st.button("📊 Thống kê Dữ liệu", use_container_width=True): st.session_state['page'] = 'stats'
-        if st.button("📰 Tin tức BHXH", use_container_width=True): st.session_state['page'] = 'news' # Menu mới
+        
+        # 2. Tin tức (Nổi bật - Được đưa lên trên)
+        if st.button("🔥 Tin tức BHXH (HOT)", use_container_width=True): st.session_state['page'] = 'news'
+        
+        # 3. Các công cụ tính toán
         if st.button("🧮 Tính BHXH Tự Nguyện", use_container_width=True): st.session_state['page'] = 'calc'
         if st.button("🏥 Tính BHYT Hộ Gia Đình", use_container_width=True): st.session_state['page'] = 'bhyt'
         if st.button("👵 Tính Tuổi Nghỉ Hưu", use_container_width=True): st.session_state['page'] = 'retirement'
+        
+        # 4. Thống kê (Ít dùng - Đưa xuống cuối)
+        st.markdown("---")
+        if st.button("📊 Thống kê Dữ liệu", use_container_width=True): st.session_state['page'] = 'stats'
         
         st.markdown("---")
         st.info("Hệ thống hỗ trợ tra cứu và tính toán BHXH, BHYT mới nhất.")
@@ -694,7 +703,7 @@ def main():
         cols = get_display_columns()
         if cols: render_search(cols)
     elif p == 'stats': render_statistics()
-    elif p == 'news': render_news() # Trang mới
+    elif p == 'news': render_news()
     elif p == 'calc': render_calculator()
     elif p == 'bhyt': render_bhyt_calculator()
     elif p == 'retirement': render_retirement_calculator()
