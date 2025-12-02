@@ -36,22 +36,7 @@ st.markdown(f"""
         font-family: 'Arial', sans-serif;
     }}
     
-    /* Header Logo & Slogan */
-    .header-container {{
-        display: flex;
-        align-items: center;
-        padding: 1rem 0;
-        border-bottom: 2px solid {BHXH_BLUE};
-        margin-bottom: 2rem;
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }}
-    .header-logo {{
-        width: 80px;
-        margin-right: 20px;
-    }}
+    /* Header Container */
     .header-text h1 {{
         margin: 0;
         font-size: 1.8rem;
@@ -116,20 +101,21 @@ EXCEL_FILE = 'aaa.xlsb'
 DB_FILE = 'bhxh_data.db'
 ZIP_PART_PREFIX = 'bhxh_data.zip.' 
 
-# --- HEADER FUNCTION ---
+# --- HEADER FUNCTION (ĐÃ FIX LOGO) ---
 def render_header():
-    # URL logo BHXH (Link public ổn định hoặc placeholder nếu lỗi)
-    logo_url = "https://baohiemxahoi.gov.vn/Style%20Library/images/logo_bhxh.png" # Logo mẫu
-    
-    st.markdown(f"""
-        <div class="header-container">
-            <img src="https://upload.wikimedia.org/wikipedia/vi/thumb/a/a2/Logo_BHXH_VN.png/300px-Logo_BHXH_VN.png" class="header-logo" alt="Logo BHXH">
-            <div class="header-text">
+    # Sử dụng st.columns để căn chỉnh logo và text đẹp hơn
+    c1, c2 = st.columns([1, 8])
+    with c1:
+        # Logo BHXH Việt Nam
+        st.image("https://upload.wikimedia.org/wikipedia/vi/thumb/a/a2/Logo_BHXH_VN.png/300px-Logo_BHXH_VN.png", width=90)
+    with c2:
+        st.markdown(f"""
+            <div class="header-text" style="padding-top: 10px;">
                 <h1>BẢO HIỂM XÃ HỘI VIỆT NAM</h1>
                 <p>Tất cả vì an sinh xã hội, vì người tham gia BHXH, BHYT</p>
             </div>
-        </div>
-    """, unsafe_allow_html=True)
+            <hr style="margin-top: 5px; border-top: 2px solid {BHXH_BLUE};">
+        """, unsafe_allow_html=True)
 
 # --- WIDGET ZALO ---
 def render_zalo_widget():
@@ -274,18 +260,22 @@ def render_calculator():
 
     st.dataframe(pd.DataFrame(data).style.highlight_max(axis=0, subset=["SỐ TIỀN PHẢI ĐÓNG"], color='#dbeeff'), use_container_width=True, hide_index=True)
 
-# --- 2. TÍNH BHYT HỘ GIA ĐÌNH (NEW) ---
+# --- 2. TÍNH BHYT HỘ GIA ĐÌNH (UPDATE: 3, 6, 12 THÁNG) ---
 def render_bhyt_calculator():
     st.subheader("🏥 Tính Tiền BHYT Hộ Gia Đình")
     st.caption(f"Áp dụng mức lương cơ sở: **{format_vnd(LUONG_CO_SO)}** | Mức đóng: **4.5%**")
 
     c1, c2 = st.columns([1, 2])
+    
+    total_household_3m = 0
+    total_household_6m = 0
+    total_household_12m = 0
+    
     with c1:
         num_people = st.number_input("Số người trong hộ gia đình tham gia:", min_value=1, max_value=20, value=1, step=1)
         
         # Tính toán
-        base_rate = LUONG_CO_SO * 0.045 # 100% mức đóng
-        total_cost = 0
+        base_rate_monthly = LUONG_CO_SO * 0.045 # 100% mức đóng 1 tháng
         details = []
 
         for i in range(1, num_people + 1):
@@ -305,32 +295,54 @@ def render_bhyt_calculator():
                 rate = 0.4
                 note = "40% người thứ 1"
             
-            cost = base_rate * rate
-            cost_year = cost * 12
-            total_cost += cost_year
+            # Tiền đóng 1 tháng
+            cost_1m = base_rate_monthly * rate
+            
+            # Tính các mốc
+            cost_3m = cost_1m * 3
+            cost_6m = cost_1m * 6
+            cost_12m = cost_1m * 12
+            
+            # Cộng dồn tổng hộ
+            total_household_3m += cost_3m
+            total_household_6m += cost_6m
+            total_household_12m += cost_12m
             
             details.append({
                 "Thành viên": f"Người thứ {i}",
-                "Tỷ lệ": f"{int(rate*100)}%",
-                "Ghi chú": note,
-                "Mức đóng/tháng": format_vnd(cost),
-                "Mức đóng/năm (12 tháng)": format_vnd(cost_year)
+                "Mức giảm": note,
+                "03 Tháng": format_vnd(cost_3m),
+                "06 Tháng": format_vnd(cost_6m),
+                "12 Tháng": format_vnd(cost_12m)
             })
 
     with c2:
         st.markdown(f"""
-        <div style="background-color: #e6f2ff; padding: 20px; border-radius: 10px; border: 1px solid #005b96; text-align: center;">
-            <h3 style="color: #005b96; margin:0;">TỔNG TIỀN PHẢI ĐÓNG (1 NĂM)</h3>
-            <h1 style="color: #d9534f; font-size: 3em; margin: 10px 0;">{format_vnd(total_cost)}</h1>
-            <p>Dành cho {num_people} thành viên</p>
+        <div style="background-color: #e6f2ff; padding: 15px; border-radius: 10px; border: 1px solid #005b96; text-align: center;">
+            <h4 style="color: #005b96; margin-bottom: 10px;">TỔNG SỐ TIỀN CẢ HỘ PHẢI ĐÓNG</h4>
+            <div style="display: flex; justify-content: space-around; text-align: center;">
+                <div>
+                    <span style="font-size: 0.9em; color: #555;">03 Tháng</span><br>
+                    <strong style="font-size: 1.2em; color: #d9534f;">{format_vnd(total_household_3m)}</strong>
+                </div>
+                <div>
+                    <span style="font-size: 0.9em; color: #555;">06 Tháng</span><br>
+                    <strong style="font-size: 1.2em; color: #d9534f;">{format_vnd(total_household_6m)}</strong>
+                </div>
+                <div>
+                    <span style="font-size: 0.9em; color: #555;">12 Tháng</span><br>
+                    <strong style="font-size: 1.4em; color: #d9534f;">{format_vnd(total_household_12m)}</strong>
+                </div>
+            </div>
+            <p style="margin-top: 10px; font-size: 0.85em; color: #666;">(Áp dụng cho {num_people} thành viên)</p>
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("### 📋 Chi tiết từng thành viên")
+    st.markdown("### 📋 Chi tiết mức đóng từng thành viên")
     df_bhyt = pd.DataFrame(details)
     st.dataframe(df_bhyt, use_container_width=True, hide_index=True)
     
-    st.info("💡 **Lưu ý:** Mức đóng này tính theo Lương cơ sở 2.340.000đ. Người thứ 5 trở đi đóng bằng 40% mức đóng của người thứ nhất.")
+    st.info("💡 **Lưu ý:** Người thứ 5 trở đi đóng bằng 40% mức đóng của người thứ nhất.")
 
 # --- 3. TÍNH TUỔI NGHỈ HƯU (GIỮ NGUYÊN) ---
 def render_retirement_calculator():
