@@ -20,7 +20,6 @@ import time
 import os
 import zipfile
 import glob
-import numpy as np # Thêm thư viện numpy cho xử lý số liệu
 
 # --- CẤU HÌNH ỨNG DỤNG ---
 st.set_page_config(
@@ -65,7 +64,7 @@ def configure_ai():
     return False
 
 def get_ai_response(prompt, role_desc="", stream=False):
-    """Thử lần lượt các model từ mới đến cũ để tránh lỗi 404. Giữ lại để không phá vỡ Chatbot."""
+    """Thử lần lượt các model từ mới đến cũ để tránh lỗi 404."""
     if not configure_ai(): return "⚠️ Lỗi: Chưa có API Key."
     models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
     full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
@@ -135,37 +134,6 @@ def get_display_columns():
         return [c for c in all if not c.startswith('idx_') and c != 'master_search_idx' and 'kcb' not in c.lower() and c != 'index']
     except: return []
     finally: conn.close()
-
-# Hàm mới để lấy dữ liệu cho tính năng gợi ý (Autosuggest)
-@st.cache_data(ttl=3600)
-def get_autocomplete_options(column_name):
-    conn = init_data_db()
-    try:
-        # Giới hạn 200 giá trị duy nhất để tránh quá tải
-        df = pd.read_sql_query(f'SELECT DISTINCT "{column_name}" FROM bhxh WHERE "{column_name}" != "" LIMIT 200', conn)
-        return df[column_name].tolist()
-    except:
-        return []
-    finally:
-        conn.close()
-
-# Hàm mới để lấy toàn bộ dữ liệu (cho mục đích thống kê, nhưng chỉ lấy các cột cần thiết)
-@st.cache_data(ttl=3600)
-def get_all_data_for_analytics():
-    conn = init_data_db()
-    # Chỉ lấy các cột có thể phân tích: hoten, ngaysinh (để tính tuổi), gioi_tinh, ...
-    cols_to_fetch = ["ho_ten", "ngay_sinh", "gioi_tinh"] 
-    # Điều chỉnh tên cột SQL theo tên trong DB của bạn
-    cols_to_fetch_db = [c for c in cols_to_fetch if c in get_display_columns()]
-    sel = ", ".join([f'"{c}"' for c in cols_to_fetch_db])
-    if not sel: return pd.DataFrame()
-    try:
-        df = pd.read_sql_query(f'SELECT {sel} FROM bhxh', conn)
-        return df
-    except:
-        return pd.DataFrame()
-    finally:
-        conn.close()
 
 # --- TÌM KIẾM ---
 def search_data(mode, q):
@@ -291,226 +259,41 @@ def render_calculator():
     
     st.success(f"💡 **Kết luận:** Với mức thu nhập **{format_vnd(income)}**, đối tượng **{doi_tuong}**, bạn chỉ cần đóng **{format_vnd(so_tien_thuc_dong)}/tháng**.")
 
-# --- ƯỚC TÍNH LƯƠNG HƯU (CÓ DÙNG AI) ---
-def render_pension_calculator():
-    st.subheader("👵👴 Ước Tính Lương Hưu")
-    st.caption("Sử dụng AI và công thức BHXH Việt Nam để ước tính mức lương hưu hàng tháng.")
-
-    col1, col2 = st.columns(2)
-    
-    # Giả định người dùng nhập các thông số chính
-    with col1:
-        years = st.number_input("Số năm đóng BHXH:", min_value=1, max_value=40, value=20, step=1)
-    
-    with col2:
-        # Mức lương đóng bình quân có thể nằm trong khoảng Chuẩn Nghèo đến Tối Đa
-        avg_income = st.number_input(f"Mức thu nhập đóng BHXH bình quân (VNĐ):", 
-                                     min_value=CHUAN_NGHEO, 
-                                     max_value=MAX_MUC_DONG, 
-                                     value=3000000, 
-                                     step=100000)
-
-    if st.button("Tính Toán Lương Hưu Ước Tính", use_container_width=True):
-        
-        # --- BƯỚC 1: TÍNH TOÁN GIẢ ĐỊNH (SIMPLIFIED CALCULATION) ---
-        # Giả định Tỷ lệ hưởng (Áp dụng cho Nam giới): 
-        # 45% cho 20 năm đóng đầu tiên, mỗi năm sau + 2% (Công thức đơn giản, chỉ mang tính minh họa nhanh)
-        
-        # Nam giới: 45% cho 20 năm đầu tiên
-        base_years = 20
-        base_rate = 0.45 
-        
-        # Xác định tỷ lệ hưởng (%)
-        if years <= base_years:
-            percent = base_rate
-        else:
-            extra_years = years - base_years
-            # Áp dụng 45% cho 20 năm đầu + (số năm dư * 2%)
-            percent = min(base_rate + extra_years * 0.02, 0.75) # Tối đa 75%
-
-        # Lương hưu hàng tháng (ước tính đơn giản)
-        estimated_pension_raw = avg_income * percent
-        
-        # --- BƯỚC 2: DÙNG AI ĐỂ CUNG CẤP GIẢI THÍCH CHI TIẾT ---
-        prompt = (f"Tính toán chi tiết và giải thích công thức ước tính lương hưu hàng tháng cho một người có: "
-                  f"1. Tổng số năm đóng BHXH: {years} năm. "
-                  f"2. Mức thu nhập đóng BHXH bình quân: {format_vnd(avg_income)}. "
-                  f"Dựa trên Luật BHXH Việt Nam hiện hành (giả định người này là nam giới và nghỉ hưu đủ tuổi). "
-                  f"Trình bày kết quả và giải thích rõ ràng TỶ LỆ HƯỞNG (%) được tính như thế nào.")
-        
-        with st.spinner("Đang tham vấn Chuyên gia AI để tính toán chi tiết và giải thích..."):
-            ai_explanation = get_ai_response(prompt, "Chuyên gia tính lương hưu BHXH hàng đầu. Trả lời bằng tiếng Việt thân thiện, chính xác, và chia thành các mục rõ ràng.")
-
-        # --- BƯỚC 3: HIỂN THỊ KẾT QUẢ ---
-        st.markdown("---")
-        st.subheader("💡 Kết Quả Ước Tính (Tham khảo)")
-        st.info(f"💰 Mức Lương Hưu Ước Tính/tháng (giả định): **{format_vnd(estimated_pension_raw)}**")
-        st.markdown(f"Tỷ lệ hưởng áp dụng: **{percent * 100:.2f}%**")
-        st.markdown("---")
-        st.markdown("#### 📝 Giải Thích Chi Tiết từ Chuyên Gia AI:")
-        st.markdown(ai_explanation)
-
-# --- CHỨC NĂNG THỐNG KÊ TỔNG QUAN (TÍNH NĂNG MỚI) ---
-def render_analytics():
-    st.subheader("📈 Thống Kê Tổng Quan Dữ Liệu")
-    st.caption("Tổng hợp các chỉ số cơ bản và phân bố dữ liệu BHXH.")
-    
-    df = get_all_data_for_analytics()
-    if df.empty:
-        st.warning("⚠️ Không có dữ liệu để phân tích.")
-        return
-
-    total_records = len(df)
-    st.info(f"Tổng số hồ sơ BHXH trong cơ sở dữ liệu: **{total_records:,}**".replace(",", "."))
-
-    st.markdown("---")
-    
-    # 1. Thống kê theo Giới tính
-    if "gioi_tinh" in df.columns:
-        st.markdown("#### 1. Phân bố theo Giới tính")
-        gender_counts = df["gioi_tinh"].str.upper().value_counts()
-        gender_chart_data = pd.DataFrame({
-            'Giới tính': gender_counts.index,
-            'Số lượng': gender_counts.values
-        })
-        st.bar_chart(gender_chart_data, x='Giới tính', y='Số lượng')
-    
-    # 2. Thống kê theo Độ tuổi
-    if "ngay_sinh" in df.columns:
-        st.markdown("#### 2. Phân bố theo Độ tuổi")
-        
-        # Chuyển đổi ngày sinh sang format Date và tính tuổi
-        # Thử nhiều định dạng ngày tháng nếu cần (DD/MM/YYYY, YYYY-MM-DD, ...)
-        def calculate_age(dob_str):
-            try:
-                # Giả định định dạng ngày phổ biến (DD/MM/YYYY)
-                dob = pd.to_datetime(dob_str, format='%d/%m/%Y', errors='coerce')
-                if pd.isna(dob):
-                    # Thử định dạng khác (YYYY-MM-DD)
-                    dob = pd.to_datetime(dob_str, format='%Y-%m-%d', errors='coerce')
-                
-                if pd.notna(dob):
-                    today = pd.to_datetime('today')
-                    return (today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day)))
-                return np.nan
-            except:
-                return np.nan
-
-        df['Tuổi'] = df['ngay_sinh'].apply(calculate_age)
-        
-        # Tạo bins độ tuổi (ví dụ: 0-20, 21-30, 31-40, 41-50, 51-60, >60)
-        bins = [0, 20, 30, 40, 50, 60, 150]
-        labels = ['Dưới 20', '21-30', '31-40', '41-50', '51-60', 'Trên 60']
-        
-        # Lọc bỏ các giá trị tuổi không hợp lệ/NaN
-        df_valid_age = df.dropna(subset=['Tuổi'])
-        
-        if not df_valid_age.empty:
-            df_valid_age['Nhóm Tuổi'] = pd.cut(df_valid_age['Tuổi'], bins=bins, labels=labels, right=True)
-            age_counts = df_valid_age['Nhóm Tuổi'].value_counts(sort=False).reset_index()
-            age_counts.columns = ['Nhóm Tuổi', 'Số lượng']
-            
-            st.bar_chart(age_counts, x='Nhóm Tuổi', y='Số lượng')
-        else:
-            st.warning("Không thể tính toán tuổi do dữ liệu ngày sinh không hợp lệ.")
-
-
 # --- GIAO DIỆN ---
 def render_search(cols):
     st.subheader("🔍 Tra Cứu")
     t1, t2 = st.tabs(["Nhanh (AI)", "Chi tiết"])
-    
-    # TAB 1: TRA CỨU NHANH (AI)
     with t1:
         q = st.text_input("Từ khóa:", placeholder="vd: nguyen van a 1990")
         if q:
+            # log_action(st.session_state['username'], "Search AI", q) # Đã loại bỏ log
             df = search_data('ai', q)
             if not df.empty:
                 st.success(f"Tìm thấy {len(df)} kết quả")
                 st.dataframe(df, use_container_width=True, hide_index=True)
-
-                # Nút tải về kết quả tra cứu nhanh
-                csv_ai = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="Tải về kết quả (.csv)",
-                    data=csv_ai,
-                    file_name='ket_qua_tra_cuu_nhanh.csv',
-                    mime='text/csv',
-                    key='download_ai'
-                )
-
                 if len(df) == 1:
                     with st.expander("✨ AI Phân tích"):
-                        # Giữ lại tính năng phân tích 1 hồ sơ duy nhất
                         st.write(get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", "Chuyên gia BHXH tóm tắt."))
             else: st.warning("Không thấy.")
-    
-    # TAB 2: TRA CỨU CHI TIẾT (Có Tự Động Gợi Ý và 3 trường cố định)
     with t2:
-        defs = ['so_bhxh', 'ho_ten', 'ngay_sinh', 'so_cmnd'] 
-        
-        # 1. Định nghĩa các cột cố định
-        fixed_cols = ["ho_ten", "so_bhxh", "so_cmnd"]
-        
-        # Tạo input cho 3 trường cố định với tính năng gợi ý (Autosuggest)
+        defs = ['sobhxh', 'hoten', 'ngaysinh', 'socmnd']
+        # Lấy 4 cột mặc định hoặc 4 cột đầu tiên
+        sel = [c for c in cols if any(x in unidecode.unidecode(c).lower() for x in defs)] or cols[:4] 
+        with st.expander("Cấu hình", expanded=True): s = st.multiselect("Cột:", cols, default=sel)
         inp = {}
-        c_fixed = st.columns(3)
-        
-        for i, n in enumerate(fixed_cols):
-            if n in cols: # Chỉ hiển thị nếu cột tồn tại trong DB
-                options = get_autocomplete_options(n)
-                options.insert(0, "") # Thêm option trống
-                # Sử dụng tên tiếng Việt cho giao diện
-                display_name = n.replace('_', ' ').title().replace('So', 'Số').replace('Ho', 'Họ')
-                
-                with c_fixed[i]:
-                    inp[n] = st.selectbox(f"{display_name}:", options=options, key=f'fixed_select_{n}')
-            else:
-                # Nếu cột không tồn tại, thêm vào dict input với giá trị trống (hoặc bỏ qua)
-                inp[n] = ""
-
-        st.markdown("---") # Đường kẻ phân tách
-
-        # 2. Cấu hình cho các cột tùy chọn còn lại
-        
-        # Lấy danh sách các cột còn lại không phải là cột cố định
-        remaining_cols = [c for c in cols if c not in fixed_cols]
-        
-        # Mặc định chọn các cột quan trọng khác (nếu có)
-        default_selected_remaining = [c for c in remaining_cols if any(x in c.lower() for x in ['ngay_sinh', 'diachi'])] or []
-
-        with st.expander("➕ Tra cứu nâng cao (Chọn thêm cột khác)"): 
-            s = st.multiselect("Cột tùy chọn:", remaining_cols, default=default_selected_remaining)
-        
-        # 3. Tạo input cho các cột tùy chọn
         if s:
-            c_optional = st.columns(4)
-            for i, n in enumerate(s): 
-                # Dùng text input cho các cột còn lại
-                display_name = n.replace('_', ' ').title().replace('So', 'Số').replace('Ho', 'Họ')
-                inp[n] = c_optional[i % 4].text_input(display_name, key=f'optional_text_{n}') 
-
-        # 4. Nút Tìm
-        if st.button("Tìm", use_container_width=True):
-            # Lọc các giá trị có nhập (không phải chuỗi trống)
+            c = st.columns(4)
+            for i, n in enumerate(s): inp[n] = c[i % 4].text_input(n)
+        if st.button("Tìm"):
             v = {k: val for k, val in inp.items() if val.strip()}
             if v:
+                # log_action(st.session_state['username'], "Search Manual", str(v)) # Đã loại bỏ log
                 df = search_data('manual', v)
                 if not df.empty:
                     st.success(f"Thấy {len(df)} KQ")
                     st.dataframe(df, use_container_width=True, hide_index=True)
-                    
-                    # Nút tải về kết quả tra cứu chi tiết
-                    csv_manual = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="Tải về kết quả (.csv)",
-                        data=csv_manual,
-                        file_name='ket_qua_tra_cuu_chi_tiet.csv',
-                        mime='text/csv',
-                        key='download_manual_t2' # Đổi key để tránh trùng với key trong t1
-                    )
                 else: st.warning("Không thấy.")
-            else: st.warning("Vui lòng nhập ít nhất một thông tin để tìm kiếm.")
+            else: st.warning("Nhập thông tin.")
 
 def render_chatbot():
     st.subheader("🤖 Chatbot")
@@ -574,9 +357,7 @@ def main():
         
         # Menu chính
         if st.button("🔍 Tra cứu CSDL", use_container_width=True): st.session_state['page'] = 'search'
-        if st.button("📈 Thống Kê Tổng Quan", use_container_width=True): st.session_state['page'] = 'analytics' # Thêm nút mới
         if st.button("🧮 Tính BHXH Tự Nguyện", use_container_width=True): st.session_state['page'] = 'calc'
-        if st.button("👵👴 Ước Tính Lương Hưu", use_container_width=True): st.session_state['page'] = 'pension' 
         if st.button("🤖 Chatbot Hỏi Đáp", use_container_width=True): st.session_state['page'] = 'chat'
         if st.button("✍️ Tạo Nội Dung", use_container_width=True): st.session_state['page'] = 'content'
 
@@ -587,9 +368,7 @@ def main():
         cols = get_display_columns()
         if not cols: st.error("❌ Không tìm thấy dữ liệu cột."); return
         render_search(cols)
-    elif p == 'analytics': render_analytics() # Trang thống kê mới
     elif p == 'calc': render_calculator()
-    elif p == 'pension': render_pension_calculator() 
     elif p == 'chat': render_chatbot()
     elif p == 'content': render_content()
 
