@@ -1,17 +1,3 @@
-# --- TỰ ĐỘNG NÂNG CẤP THƯ VIỆN AI NẾU CŨ (FIX LỖI 404) ---
-import subprocess
-import sys
-try:
-    import google.generativeai as genai
-    import pkg_resources
-    # Kiểm tra version, nếu thấp hơn 0.7.0 thì update ngay lập tức
-    ver = pkg_resources.get_distribution("google-generativeai").version
-    if ver < "0.7.0":
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "google-generativeai"])
-        import google.generativeai as genai
-except:
-    pass # Bỏ qua nếu lỗi import pkg_resources
-
 import streamlit as st
 import pandas as pd
 import sqlite3
@@ -26,7 +12,9 @@ from google.cloud import firestore
 from google.oauth2 import service_account
 import json
 
-# --- CẤU HÌNH ỨNG DỤNG ---
+# ==============================================================================
+# ⚙️ CẤU HÌNH ỨNG DỤNG
+# ==============================================================================
 st.set_page_config(
     page_title="Hệ thống BHXH Chuyên Nghiệp",
     page_icon="🏥",
@@ -34,30 +22,29 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ==============================================================================
-# 🔑 CẤU HÌNH HỆ THỐNG
-# ==============================================================================
-HARDCODED_API_KEY = "AIzaSyBd6MNZdWTsJiTy1yrrWK4G2PsltqFV6eg" 
+# CÁC HẰNG SỐ CẤU HÌNH
 ZALO_PHONE_NUMBER = "0986053006" 
 
 # CÁC HẰNG SỐ TÍNH BHXH TỰ NGUYỆN (CẬP NHẬT 2025)
-CHUAN_NGHEO = 1500000 # Mức chuẩn nghèo khu vực nông thôn
-LUONG_CO_SO = 2340000 # Mức lương cơ sở
-MAX_MUC_DONG = 20 * LUONG_CO_SO # Mức đóng tối đa
-TY_LE_DONG = 0.22 # Tỷ lệ đóng 22%
+CHUAN_NGHEO = 1500000 
+LUONG_CO_SO = 2340000 
+MAX_MUC_DONG = 20 * LUONG_CO_SO 
+TY_LE_DONG = 0.22 
 
-# Mức hỗ trợ mới nhất
-HO_TRO_NGHEO = 0.50     # 50%
-HO_TRO_CAN_NGHEO = 0.40 # 40%
-HO_TRO_DAN_TOC = 0.30   # 30%
-HO_TRO_KHAC = 0.20      # 20%
+# Mức hỗ trợ
+HO_TRO_NGHEO = 0.50     
+HO_TRO_CAN_NGHEO = 0.40 
+HO_TRO_DAN_TOC = 0.30   
+HO_TRO_KHAC = 0.20      
 
-# Tên file
+# Tên file dữ liệu
 EXCEL_FILE = 'aaa.xlsb'
 DB_FILE = 'bhxh_data.db'
 ZIP_PART_PREFIX = 'bhxh_data.zip.' 
 
-# --- 1. KẾT NỐI DATABASE ĐÁM MÂY (FIREBASE) ---
+# ==============================================================================
+# 1. KẾT NỐI DATABASE ĐÁM MÂY (FIREBASE - USER & LOGS)
+# ==============================================================================
 @st.cache_resource
 def get_firestore_db():
     try:
@@ -65,13 +52,15 @@ def get_firestore_db():
             key_dict = dict(st.secrets["gcp_service_account"])
             creds = service_account.Credentials.from_service_account_info(key_dict)
             return firestore.Client(credentials=creds, project=key_dict["project_id"])
-    except: return None
+    except Exception as e:
+        st.error(f"Lỗi kết nối Firestore: {e}")
+        return None
     return None
 
 def make_hashes(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
-# --- QUẢN LÝ USER (CLOUD) ---
+# --- QUẢN LÝ USER ---
 def create_user(username, password, role):
     db = get_firestore_db()
     if not db: return False
@@ -105,60 +94,89 @@ def get_all_users():
     try: return pd.DataFrame([{"username": d.id, **d.to_dict()} for d in db.collection("users").stream()])
     except: return pd.DataFrame()
 
-# --- QUẢN LÝ LOGS (CLOUD) ---
+# --- QUẢN LÝ LOGS (NÂNG CẤP) ---
 def log_action(username, action, details=""):
     try:
         db = get_firestore_db()
         if db:
             vn_timezone = datetime.timezone(datetime.timedelta(hours=7))
             now_vn = datetime.datetime.now(vn_timezone)
+            # Lưu timestamp dạng chuỗi để hiển thị và dạng server_time để sort
             db.collection("logs").add({
                 "timestamp": now_vn.strftime("%Y-%m-%d %H:%M:%S"),
+                "date_only": now_vn.strftime("%Y-%m-%d"), # Thêm field này để lọc theo ngày dễ hơn nếu cần
                 "sort_time": firestore.SERVER_TIMESTAMP,
-                "username": username, "action": action, "details": str(details)
+                "username": username, 
+                "action": action, 
+                "details": str(details)
             })
     except: pass
 
-def get_logs(limit=100):
+def get_logs_advanced(limit=500):
+    """Lấy logs với số lượng lớn để lọc tại client"""
     db = get_firestore_db()
     if not db: return pd.DataFrame()
     try:
+        # Lấy dữ liệu thô từ Firestore
         logs_ref = db.collection("logs").order_by("sort_time", direction=firestore.Query.DESCENDING).limit(limit)
-        return pd.DataFrame([{"Thời gian (VN)": d.to_dict().get("timestamp"), "Người dùng": d.to_dict().get("username"), "Hành động": d.to_dict().get("action"), "Chi tiết": d.to_dict().get("details")} for d in logs_ref.stream()])
-    except: return pd.DataFrame()
+        docs = logs_ref.stream()
+        
+        data = []
+        for d in docs:
+            item = d.to_dict()
+            item['id'] = d.id # Lưu ID để dùng cho chức năng xóa
+            data.append(item)
+            
+        if not data: return pd.DataFrame()
+        
+        df = pd.DataFrame(data)
+        # Đảm bảo cột hiển thị đúng
+        return df[['id', 'timestamp', 'username', 'action', 'details']]
+    except Exception as e:
+        st.error(f"Lỗi tải logs: {e}")
+        return pd.DataFrame()
+
+def delete_log_batch(log_ids):
+    """Xóa nhiều dòng log cùng lúc"""
+    db = get_firestore_db()
+    if not db: return False
+    try:
+        batch = db.batch()
+        count = 0
+        deleted_count = 0
+        
+        for doc_id in log_ids:
+            doc_ref = db.collection("logs").document(doc_id)
+            batch.delete(doc_ref)
+            count += 1
+            deleted_count += 1
+            
+            # Firestore batch giới hạn 500 operations
+            if count >= 400:
+                batch.commit()
+                batch = db.batch()
+                count = 0
+                
+        if count > 0:
+            batch.commit()
+        return deleted_count
+    except Exception as e:
+        st.error(f"Lỗi xóa logs: {e}")
+        return 0
 
 def init_cloud_admin():
     if "admin_checked" not in st.session_state:
-        if verify_login("admin", "admin123") is None: create_user("admin", "admin123", "admin")
+        # Tạo admin mặc định nếu chưa có (để tránh bị lock out)
+        if verify_login("admin", "admin123") is None: 
+            create_user("admin", "admin123", "admin")
         st.session_state["admin_checked"] = True
 
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- 2. HỆ THỐNG AI (CƠ CHẾ MỚI) ---
-def configure_ai():
-    key = HARDCODED_API_KEY or st.session_state.get('user_api_key') or st.secrets.get("GOOGLE_API_KEY")
-    if key: genai.configure(api_key=key); return True
-    return False
-
-def get_ai_response(prompt, role_desc="", stream=False):
-    """Thử lần lượt các model từ mới đến cũ để tránh lỗi 404."""
-    if not configure_ai(): return "⚠️ Lỗi: Chưa có API Key."
-    models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
-    full_prompt = f"{role_desc}\n\n{prompt}" if role_desc else prompt
-    last_error = ""
-    for model_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(model_name)
-            if stream: return model.generate_content(full_prompt, stream=True)
-            return model.generate_content(full_prompt).text
-        except Exception as e:
-            last_error = str(e)
-            if "429" in last_error: return "⚠️ Hệ thống đang quá tải. Vui lòng thử lại sau 1 phút."
-            continue 
-    return f"⚠️ Không kết nối được AI. Lỗi cuối cùng: {last_error}"
-
-# --- 3. XỬ LÝ DỮ LIỆU ---
+# ==============================================================================
+# 2. XỬ LÝ DỮ LIỆU (SQLITE - GIỮ NGUYÊN ĐỂ KHÔNG LỖI)
+# ==============================================================================
 def clean_text(text): return unidecode.unidecode(str(text)).lower().replace(' ', '') if pd.notna(text) else ""
 
 def init_data_db():
@@ -172,6 +190,7 @@ def check_and_prepare_data():
             conn = init_data_db(); res = conn.execute("SELECT count(*) FROM bhxh").fetchone(); conn.close()
             if res and res[0] > 0: return True, "Sẵn sàng"
         except: os.remove(DB_FILE)
+    
     parts = sorted(glob.glob(f"{ZIP_PART_PREFIX}*"))
     if parts:
         msg = st.empty(); msg.info(f"📦 Đang nối {len(parts)} phần dữ liệu...")
@@ -184,19 +203,25 @@ def check_and_prepare_data():
             if os.path.exists("bhxh_full.zip"): os.remove("bhxh_full.zip")
             msg.empty(); return True, "Restored"
         except Exception as e: return False, str(e)
+    
     if os.path.exists(EXCEL_FILE): return import_excel_to_sqlite()
-    return False, "⚠️ Thiếu dữ liệu"
+    return False, "⚠️ Thiếu dữ liệu (File Excel hoặc ZIP)"
 
 def import_excel_to_sqlite():
-    st.warning("⚠️ Đang nạp Excel. Nên dùng tool chia nhỏ file.")
+    st.warning("⚠️ Đang nạp Excel. Quá trình này có thể mất vài phút.")
     conn = init_data_db(); msg = st.empty(); bar = st.progress(0)
     try:
-        msg.info("⏳ Đang xử lý..."); df = pd.read_excel(EXCEL_FILE, engine='pyxlsb'); bar.progress(40)
+        msg.info("⏳ Đang xử lý Excel..."); df = pd.read_excel(EXCEL_FILE, engine='pyxlsb'); bar.progress(40)
         df.columns = [unidecode.unidecode(str(c)).strip().replace(' ', '_').lower() for c in df.columns]
         df = df.astype(str).replace(['nan', 'None', 'NaT'], '')
+        
+        # Tạo cột index tìm kiếm tổng hợp
         df['master_search_idx'] = df.apply(lambda x: clean_text(' '.join(x.values)), axis=1)
+        
+        # Tạo cột index cho từng trường
         for col in df.columns: 
             if col != 'master_search_idx': df[f'idx_{col}'] = df[col].apply(clean_text)
+            
         bar.progress(80)
         df.to_sql('bhxh', conn, if_exists='replace', index=False, chunksize=5000)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_master ON bhxh (master_search_idx)")
@@ -208,33 +233,35 @@ def get_display_columns():
     conn = init_data_db()
     try:
         c = conn.cursor(); c.execute("PRAGMA table_info(bhxh)")
-        all = [r[1] for r in c.fetchall()]
-        return [c for c in all if not c.startswith('idx_') and c != 'master_search_idx' and 'kcb' not in c.lower() and c != 'index']
+        all_cols = [r[1] for r in c.fetchall()]
+        # Lọc bỏ các cột kỹ thuật (idx_)
+        return [c for c in all_cols if not c.startswith('idx_') and c != 'master_search_idx' and 'kcb' not in c.lower() and c != 'index']
     except: return []
     finally: conn.close()
 
-# --- 4. TÌM KIẾM ---
-def search_data(mode, q):
+# --- TÌM KIẾM DỮ LIỆU ---
+def search_data(q_dict):
     conn = init_data_db(); cols = get_display_columns()
     if not cols: return pd.DataFrame()
     sel = ", ".join([f'"{c}"' for c in cols])
     try:
-        if mode == 'ai':
-            k = clean_text(q); 
-            if not k: return pd.DataFrame()
-            return pd.read_sql_query(f'SELECT {sel} FROM bhxh WHERE master_search_idx LIKE ? LIMIT 50', conn, params=(f'%{k}%',))
-        else:
-            conds, vals = [], []
-            for c, v in q.items():
-                if v.strip():
-                    conds.append(f'idx_{unidecode.unidecode(c).strip().replace(" ", "_").lower()} LIKE ?')
-                    vals.append(f'%{clean_text(v)}%')
-            if not conds: return pd.DataFrame()
-            return pd.read_sql_query(f'SELECT {sel} FROM bhxh WHERE {" AND ".join(conds)} LIMIT 50', conn, params=tuple(vals))
+        conds, vals = [], []
+        for c, v in q_dict.items():
+            if v.strip():
+                # Tìm kiếm chính xác trên cột đã được index (idx_)
+                conds.append(f'idx_{unidecode.unidecode(c).strip().replace(" ", "_").lower()} LIKE ?')
+                vals.append(f'%{clean_text(v)}%')
+        
+        if not conds: return pd.DataFrame()
+        
+        query = f'SELECT {sel} FROM bhxh WHERE {" AND ".join(conds)} LIMIT 100'
+        return pd.read_sql_query(query, conn, params=tuple(vals))
     except: return pd.DataFrame()
     finally: conn.close()
 
-# --- TÍNH BHXH TỰ NGUYỆN (CẬP NHẬT 2025) ---
+# ==============================================================================
+# 3. CÔNG CỤ TÍNH TOÁN (BHXH TỰ NGUYỆN)
+# ==============================================================================
 def format_vnd(value):
     return f"{int(value):,} VNĐ".replace(",", ".")
 
@@ -247,7 +274,6 @@ def render_calculator():
     col_inp, col_info = st.columns([2, 1])
     
     with col_inp:
-        # Thanh trượt chọn mức thu nhập (Bước nhảy 50k)
         income = st.slider(
             "Mức thu nhập (kéo thanh trượt):", 
             min_value=CHUAN_NGHEO, 
@@ -258,10 +284,8 @@ def render_calculator():
         )
         st.info(f"Mức thu nhập bạn chọn: **{format_vnd(income)}**")
         
-        # Nhập số chính xác nếu cần
         exact_income = st.number_input("Hoặc nhập số chính xác:", min_value=CHUAN_NGHEO, max_value=MAX_MUC_DONG, value=income, step=1000)
-        if exact_income != income:
-            income = exact_income
+        if exact_income != income: income = exact_income
 
     with col_info:
         st.markdown(
@@ -276,7 +300,7 @@ def render_calculator():
         )
 
     # 2. Chọn đối tượng
-    st.markdown("#### 2. Chọn đối tượng ưu tiên (để tính mức hỗ trợ)")
+    st.markdown("#### 2. Chọn đối tượng ưu tiên")
     doi_tuong = st.radio(
         "Bạn thuộc đối tượng nào?",
         ["Khác (Hỗ trợ 20%)", "Hộ nghèo (Hỗ trợ 50%)", "Hộ cận nghèo (Hỗ trợ 40%)", "Dân tộc thiểu số (Hỗ trợ 30%)"],
@@ -284,10 +308,8 @@ def render_calculator():
     )
 
     # Tính toán
-    # Mức đóng chuẩn (chưa trừ hỗ trợ) = Thu nhập * 22%
     muc_dong_chuan = income * TY_LE_DONG
     
-    # Mức hỗ trợ của nhà nước = Chuẩn nghèo * % Hỗ trợ (theo yêu cầu mới)
     if "Hộ nghèo" in doi_tuong:
         muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_NGHEO
         tile_hotro = "50%"
@@ -301,14 +323,12 @@ def render_calculator():
         muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * HO_TRO_KHAC
         tile_hotro = "20%"
 
-    # Số tiền thực đóng = Mức đóng chuẩn - Mức hỗ trợ
     so_tien_thuc_dong = muc_dong_chuan - muc_ho_tro
 
-    # 3. Hiển thị kết quả (Bảng so sánh các phương thức đóng)
+    # 3. Hiển thị kết quả
     st.markdown("---")
     st.markdown(f"#### 📊 Bảng Chi Tiết Số Tiền Phải Đóng (Hỗ trợ: {tile_hotro})")
     
-    # Tạo dữ liệu cho bảng
     data = {
         "Phương thức": ["Hằng tháng", "3 tháng", "6 tháng", "12 tháng"],
         "Số tháng": [1, 3, 6, 12],
@@ -328,20 +348,19 @@ def render_calculator():
 
     df_result = pd.DataFrame(data)
     
-    # Highlight cột kết quả
     st.dataframe(
         df_result.style.highlight_max(axis=0, subset=["BẠN PHẢI ĐÓNG"], color='#e6ffe6'),
         use_container_width=True,
         hide_index=True
     )
-    
-    st.success(f"💡 **Kết luận:** Với mức thu nhập **{format_vnd(income)}**, đối tượng **{doi_tuong}**, bạn chỉ cần đóng **{format_vnd(so_tien_thuc_dong)}/tháng**.")
+    st.success(f"💡 **Kết luận:** Với mức thu nhập **{format_vnd(income)}**, bạn chỉ cần đóng **{format_vnd(so_tien_thuc_dong)}/tháng**.")
 
-
-# --- 5. GIAO DIỆN ---
+# ==============================================================================
+# 4. GIAO DIỆN NGƯỜI DÙNG (UI)
+# ==============================================================================
 def render_login():
     st.markdown("<h2 style='text-align: center;'>🔐 Đăng Nhập Hệ Thống</h2>", unsafe_allow_html=True)
-    if not get_firestore_db(): st.error("❌ Lỗi kết nối Database Cloud."); return
+    if not get_firestore_db(): st.error("❌ Lỗi kết nối Database Cloud. Vui lòng kiểm tra file secrets."); return
     render_zalo_widget()
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
@@ -350,149 +369,221 @@ def render_login():
             p = st.text_input("Mật khẩu", type='password')
             if st.form_submit_button("Đăng nhập", use_container_width=True):
                 r = verify_login(u, p)
-                if r: st.session_state.update({'logged_in': True, 'username': u, 'role': r}); log_action(u, "Login", "Success"); st.rerun()
-                else: st.error("Sai thông tin")
+                if r: 
+                    st.session_state.update({'logged_in': True, 'username': u, 'role': r})
+                    log_action(u, "Login", "Success")
+                    st.rerun()
+                else: 
+                    st.error("Sai thông tin đăng nhập")
 
 def render_change_password():
     st.subheader("🔒 Đổi Mật Khẩu")
     with st.form("change_pass"):
         o = st.text_input("Mật khẩu cũ", type="password")
         n = st.text_input("Mật khẩu mới", type="password")
-        c = st.text_input("Nhập lại", type="password")
-        if st.form_submit_button("Đổi"):
+        c = st.text_input("Nhập lại mật khẩu mới", type="password")
+        if st.form_submit_button("Xác nhận đổi"):
             u = st.session_state['username']
             if verify_login(u, o):
                 if n == c and len(n) >= 6:
-                    if update_password(u, n): st.success("Thành công!"); log_action(u, "ChangePass"); time.sleep(1); st.session_state['logged_in'] = False; st.rerun()
-                    else: st.error("Lỗi mạng")
-                else: st.warning("Mật khẩu không khớp/ngắn")
-            else: st.error("Mật khẩu cũ sai")
+                    if update_password(u, n): 
+                        st.success("Đổi mật khẩu thành công!"); 
+                        log_action(u, "ChangePass", "Success")
+                        time.sleep(1)
+                        st.session_state['logged_in'] = False
+                        st.rerun()
+                    else: st.error("Lỗi kết nối mạng")
+                else: st.warning("Mật khẩu mới không khớp hoặc quá ngắn")
+            else: st.error("Mật khẩu cũ không đúng")
 
 def render_search(cols):
-    st.subheader("🔍 Tra Cứu")
-    t1, t2 = st.tabs(["Nhanh (AI)", "Chi tiết"])
-    with t1:
-        q = st.text_input("Từ khóa:", placeholder="vd: nguyen van a 1990")
-        if q:
-            log_action(st.session_state['username'], "Search AI", q)
-            df = search_data('ai', q)
+    st.subheader("🔍 Tra Cứu Thông Tin")
+    
+    # Chỉ giữ lại phần tra cứu thủ công chính xác
+    defs = ['sobhxh', 'hoten', 'ngaysinh', 'socmnd']
+    sel = [c for c in cols if any(x in unidecode.unidecode(c).lower() for x in defs)] or cols[:4]
+    
+    with st.expander("🛠️ Cấu hình cột tìm kiếm", expanded=True): 
+        s = st.multiselect("Chọn các trường thông tin để nhập liệu:", cols, default=sel)
+    
+    inp = {}
+    if s:
+        # Tạo lưới nhập liệu
+        c = st.columns(4)
+        for i, n in enumerate(s): 
+            inp[n] = c[i % 4].text_input(f"Nhập {n}")
+    
+    c_btn, c_res = st.columns([1, 5])
+    with c_btn:
+        search_btn = st.button("🔎 TÌM KIẾM", type="primary", use_container_width=True)
+    
+    if search_btn:
+        v = {k: val for k, val in inp.items() if val.strip()}
+        if v:
+            log_action(st.session_state['username'], "Search", str(v))
+            with st.spinner("Đang truy xuất dữ liệu..."):
+                df = search_data(v)
+            
             if not df.empty:
-                st.success(f"Tìm thấy {len(df)} kết quả")
+                st.success(f"✅ Tìm thấy {len(df)} kết quả")
                 st.dataframe(df, use_container_width=True, hide_index=True)
-                if len(df) == 1:
-                    with st.expander("✨ AI Phân tích"):
-                        st.write(get_ai_response(f"Dữ liệu: {df.iloc[0].to_dict()}", "Chuyên gia BHXH tóm tắt."))
-            else: st.warning("Không thấy.")
-    with t2:
-        defs = ['sobhxh', 'hoten', 'ngaysinh', 'socmnd']
-        sel = [c for c in cols if any(x in unidecode.unidecode(c).lower() for x in defs)] or cols[:4]
-        with st.expander("Cấu hình", expanded=True): s = st.multiselect("Cột:", cols, default=sel)
-        inp = {}
-        if s:
-            c = st.columns(4)
-            for i, n in enumerate(s): inp[n] = c[i % 4].text_input(n)
-        if st.button("Tìm"):
-            v = {k: val for k, val in inp.items() if val.strip()}
-            if v:
-                log_action(st.session_state['username'], "Search Manual", str(v))
-                df = search_data('manual', v)
-                if not df.empty:
-                    st.success(f"Thấy {len(df)} KQ")
-                    st.dataframe(df, use_container_width=True, hide_index=True)
-                else: st.warning("Không thấy.")
-            else: st.warning("Nhập thông tin.")
-
-def render_chatbot():
-    st.subheader("🤖 Chatbot")
-    if "msg" not in st.session_state: st.session_state.msg = [{"role": "model", "content": "Chào bạn! Tôi có thể giúp gì?"}]
-    for m in st.session_state.msg: st.chat_message(m["role"]).markdown(m["content"])
-    if p := st.chat_input():
-        log_action(st.session_state['username'], "Chatbot", p)
-        st.session_state.msg.append({"role": "user", "content": p})
-        st.chat_message("user").markdown(p)
-        with st.chat_message("model"):
-            ph = st.empty(); res = ""; 
-            s = get_ai_response(p, "Chuyên gia BHXH Việt Nam.", True)
-            try:
-                if isinstance(s, str): ph.markdown(s); res = s
-                else:
-                    for c in s: 
-                        if c.text: res += c.text; ph.markdown(res + "▌")
-                    ph.markdown(res)
-            except: ph.markdown(res)
-            st.session_state.msg.append({"role": "model", "content": res})
-
-def render_content():
-    st.subheader("✍️ Tạo Nội Dung")
-    c1, c2 = st.columns(2)
-    with c1:
-        t = st.text_input("Chủ đề:")
-        if st.button("Viết") and t:
-            log_action(st.session_state['username'], "Content", t)
-            with st.spinner("..."): st.session_state['txt'] = get_ai_response(f"Viết bài tuyên truyền về: {topic}", "Chuyên viên truyền thông")
-    with c2:
-        if 'content' in st.session_state: st.text_area("Kết quả:", value=st.session_state['content'], height=400)
+            else: 
+                st.warning("⚠️ Không tìm thấy kết quả nào phù hợp.")
+        else: 
+            st.warning("⚠️ Vui lòng nhập ít nhất một trường thông tin.")
 
 def render_admin():
-    st.header("🛠️ Quản Trị")
-    t1, t2 = st.tabs(["User", "Logs"])
+    st.header("🛠️ Quản Trị Hệ Thống")
+    t1, t2 = st.tabs(["👤 Quản lý User", "📜 Nhật ký hoạt động"])
+    
+    # --- TAB 1: USER ---
     with t1:
         st.dataframe(get_all_users(), use_container_width=True)
         c1, c2, c3 = st.columns(3)
         with c1:
-            with st.popover("➕ Thêm"):
-                with st.form("a"):
-                    u = st.text_input("User"); p = st.text_input("Pass"); r = st.selectbox("Role", ["user", "admin"])
-                    if st.form_submit_button("Tạo"):
-                        if create_user(u, p, r): st.success("OK"); log_action(st.session_state['username'], "Add", u); time.sleep(1); st.rerun()
-                        else: st.error("Trùng")
+            with st.popover("➕ Thêm User"):
+                with st.form("add_user"):
+                    u = st.text_input("Username")
+                    p = st.text_input("Password")
+                    r = st.selectbox("Role", ["user", "admin"])
+                    if st.form_submit_button("Tạo User"):
+                        if create_user(u, p, r): 
+                            st.success("Đã tạo!"); log_action(st.session_state['username'], "Add User", u); time.sleep(1); st.rerun()
+                        else: st.error("User đã tồn tại")
         with c2:
-            with st.popover("🗑️ Xóa"):
-                d = st.text_input("User xóa:")
-                if st.button("Xóa"):
-                    if d != "admin" and delete_user_cloud(d): st.success("OK"); log_action(st.session_state['username'], "Del", d); time.sleep(1); st.rerun()
-                    else: st.error("Lỗi")
+            with st.popover("🗑️ Xóa User"):
+                d = st.text_input("Nhập Username cần xóa:")
+                if st.button("Xóa vĩnh viễn"):
+                    if d != "admin" and delete_user_cloud(d): 
+                        st.success("Đã xóa!"); log_action(st.session_state['username'], "Del User", d); time.sleep(1); st.rerun()
+                    else: st.error("Không thể xóa admin hoặc lỗi")
         with c3:
-            with st.popover("🔄 Reset Pass"):
-                rs = st.text_input("User reset (123456):")
-                if st.button("Reset"):
-                    if update_password(rs, "123456"): st.success("OK"); log_action(st.session_state['username'], "Reset", rs)
+            with st.popover("🔄 Reset Password"):
+                rs = st.text_input("Username cần reset:")
+                if st.button("Đặt lại thành 123456"):
+                    if update_password(rs, "123456"): 
+                        st.success("Đã reset!"); log_action(st.session_state['username'], "Reset Pass", rs)
                     else: st.error("Lỗi")
-    with t2:
-        if st.button("Tải lại"): st.rerun()
-        st.dataframe(get_logs(200), use_container_width=True)
 
+    # --- TAB 2: LOGS (NÂNG CẤP) ---
+    with t2:
+        st.subheader("Bộ lọc Nhật ký")
+        
+        # 1. Fetch dữ liệu thô
+        df_logs = get_logs_advanced(limit=1000) # Lấy 1000 logs gần nhất
+        
+        if not df_logs.empty:
+            # Convert timestamp sang datetime để lọc
+            df_logs['dt'] = pd.to_datetime(df_logs['timestamp'], format="%Y-%m-%d %H:%M:%S", errors='coerce')
+            
+            # Cột lọc
+            col_d1, col_d2, col_u, col_a = st.columns(4)
+            
+            # Lọc theo ngày
+            today = datetime.date.today()
+            start_d = col_d1.date_input("Từ ngày", today - datetime.timedelta(days=7))
+            end_d = col_d2.date_input("Đến ngày", today)
+            
+            # Lọc theo User
+            users = ["Tất cả"] + list(df_logs['username'].unique())
+            sel_user = col_u.selectbox("Người dùng", users)
+            
+            # Lọc theo Hành động
+            actions = ["Tất cả"] + list(df_logs['action'].unique())
+            sel_action = col_a.selectbox("Hành động", actions)
+            
+            # Áp dụng bộ lọc
+            mask = (df_logs['dt'].dt.date >= start_d) & (df_logs['dt'].dt.date <= end_d)
+            if sel_user != "Tất cả":
+                mask = mask & (df_logs['username'] == sel_user)
+            if sel_action != "Tất cả":
+                mask = mask & (df_logs['action'] == sel_action)
+                
+            filtered_df = df_logs.loc[mask]
+            
+            # Hiển thị
+            st.info(f"Hiển thị {len(filtered_df)} dòng nhật ký.")
+            
+            # Checkbox chọn để xóa
+            event = st.dataframe(
+                filtered_df[['timestamp', 'username', 'action', 'details']],
+                use_container_width=True,
+                selection_mode="multi-row",
+                on_select="rerun"
+            )
+            
+            # Chức năng xóa
+            st.divider()
+            col_del_1, col_del_2 = st.columns(2)
+            
+            # Xóa các dòng đang hiển thị (theo bộ lọc)
+            with col_del_1:
+                if st.button(f"🗑️ Xóa toàn bộ {len(filtered_df)} dòng đang lọc", type="primary"):
+                    if len(filtered_df) > 0:
+                        count = delete_log_batch(filtered_df['id'].tolist())
+                        st.success(f"Đã xóa {count} dòng nhật ký.")
+                        log_action(st.session_state['username'], "Clear Logs", f"Deleted {count} entries")
+                        time.sleep(1)
+                        st.rerun()
+            
+            # Xóa dòng đang chọn trong bảng
+            with col_del_2:
+                selected_indices = event.selection.rows
+                if selected_indices:
+                    ids_to_delete = filtered_df.iloc[selected_indices]['id'].tolist()
+                    if st.button(f"🗑️ Xóa {len(ids_to_delete)} dòng đã chọn"):
+                        count = delete_log_batch(ids_to_delete)
+                        st.success(f"Đã xóa {count} dòng.")
+                        time.sleep(1)
+                        st.rerun()
+
+        else:
+            st.info("Chưa có nhật ký hoạt động nào.")
+
+# ==============================================================================
+# MAIN FUNCTION
+# ==============================================================================
 def main():
     init_cloud_admin()
     if 'logged_in' not in st.session_state: st.session_state.update({'logged_in': False, 'page': 'search'})
     render_zalo_widget()
+    
+    # Kiểm tra dữ liệu
     ok, msg = check_and_prepare_data()
     if not ok: st.error(msg); return
-    if not st.session_state['logged_in']: render_login()
+    
+    if not st.session_state['logged_in']: 
+        render_login()
     else:
+        # SIDEBAR MỚI (Đã bỏ AI/Chatbot/Content)
         with st.sidebar:
-            st.title(f"Hi, {st.session_state['username']}")
-            if st.button("🔍 Tra cứu", use_container_width=True): st.session_state['page'] = 'search'
+            st.title(f"👤 {st.session_state['username']}")
+            st.markdown("---")
+            
+            if st.button("🔍 Tra cứu dữ liệu", use_container_width=True): st.session_state['page'] = 'search'
             if st.button("🧮 Tính BHXH", use_container_width=True): st.session_state['page'] = 'calc'
-            if st.button("🤖 Chatbot", use_container_width=True): st.session_state['page'] = 'chat'
-            if st.button("✍️ Nội dung", use_container_width=True): st.session_state['page'] = 'content'
-            st.divider()
+            
+            st.markdown("---")
             if st.button("🔒 Đổi mật khẩu", use_container_width=True): st.session_state['page'] = 'pass'
+            
             if st.session_state['role'] == 'admin':
-                st.divider(); 
-                if st.button("🛠️ Quản trị", use_container_width=True): st.session_state['page'] = 'admin'
-            st.divider()
-            if st.button("Đăng xuất", use_container_width=True):
-                log_action(st.session_state['username'], "Logout"); st.session_state['logged_in'] = False; st.rerun()
+                st.markdown("---")
+                if st.button("🛠️ Quản trị hệ thống", use_container_width=True, type="primary"): st.session_state['page'] = 'admin'
+            
+            st.markdown("---")
+            if st.button("🚪 Đăng xuất", use_container_width=True):
+                log_action(st.session_state['username'], "Logout", "User initiated")
+                st.session_state['logged_in'] = False
+                st.rerun()
         
-        p = st.session_state['page']; cols = get_display_columns()
+        # ROUTING
+        p = st.session_state['page']
+        cols = get_display_columns()
+        
         if p == 'search': render_search(cols)
         elif p == 'calc': render_calculator()
-        elif p == 'chat': render_chatbot()
-        elif p == 'content': render_content()
         elif p == 'pass': render_change_password()
         elif p == 'admin': render_admin()
 
 if __name__ == '__main__':
     main()
-
