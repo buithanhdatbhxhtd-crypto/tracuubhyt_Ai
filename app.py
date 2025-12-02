@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN LITE - GIAO DIỆN MỚI) ---
 import streamlit as st
 import pandas as pd
@@ -158,13 +159,20 @@ def render_header():
         """, unsafe_allow_html=True)
     
     # 2. Hiệu ứng chữ chạy (LED)
+    # Sử dụng HTML entities cho cờ Việt Nam (🇻🇳) để tránh lỗi font/encoding
     st.markdown(f"""
         <div class="marquee-container">
             <div class="marquee-text">
-                BẢO HIỂM XÃ HỘI VIỆT NAM - TẤT CẢ VÌ AN SINH XÃ HỘI, VÌ NGƯỜI THAM GIA BHXH, BHYT 🇻🇳
+                BẢO HIỂM XÃ HỘI VIỆT NAM - TẤT CẢ VÌ AN SINH XÃ HỘI, VÌ NGƯỜI THAM GIA BHXH, BHYT &#127483;&#127475;
             </div>
         </div>
-# --- TÍNH NĂNG THỜI TIẾT (ĐÃ UPDATE TỌA ĐỘ & XỬ LÝ LỖI 401) ---
+    """, unsafe_allow_html=True)
+
+# --- WIDGET ZALO ---
+def render_zalo_widget():
+    st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
+
+# --- TÍNH NĂNG THỜI TIẾT (FIX LỖI ENCODING & 401) ---
 @st.cache_data(ttl=900) # Cache 15 phút
 def get_weather_data():
     # Dữ liệu dự phòng (Mock data) cho Đắk Mil để hiển thị khi API lỗi
@@ -204,9 +212,13 @@ def render_weather_widget():
         
         icon_url = f"https://openweathermap.org/img/wn/{icon_code}@2x.png"
         
+        # SỬ DỤNG HTML ENTITIES THAY CHO EMOJI TRỰC TIẾP ĐỂ TRÁNH LỖI SYNTAX
+        # &#128205; = 📍
+        # &#128167; = 💧
+        # &#127788; = 🌬️
         st.markdown(f"""
             <div class="weather-widget">
-                <div style="font-weight: bold; margin-bottom: 5px;">📍 Huyện Đắk Mil</div>
+                <div style="font-weight: bold; margin-bottom: 5px;">&#128205; Huyện Đắk Mil</div>
                 <div style="font-size: 0.8em; margin-bottom: 10px;">Tỉnh Đắk Nông</div>
                 <div style="display: flex; align-items: center; justify-content: center;">
                     <img src="{icon_url}" width="60">
@@ -214,7 +226,7 @@ def render_weather_widget():
                 </div>
                 <p class="weather-desc">{desc}</p>
                 <div class="weather-info">
-                    💧 Độ ẩm: {humidity}% | 🌬️ Gió: {wind} m/s
+                    &#128167; Độ ẩm: {humidity}% | &#127788; Gió: {wind} m/s
                 </div>
             </div>
         """, unsafe_allow_html=True)
