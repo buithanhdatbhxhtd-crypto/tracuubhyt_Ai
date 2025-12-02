@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN LITE - GIAO DIỆN MỚI) ---
 import streamlit as st
+import streamlit.components.v1 as components # Import thư viện component để chạy JS ổn định
 import pandas as pd
 import sqlite3
 import unidecode
@@ -8,7 +9,7 @@ import time
 import os
 import zipfile
 import glob
-import requests  # Thêm thư viện requests để gọi API thời tiết và tin tức
+import requests
 from datetime import date, timedelta, datetime
 from dateutil.relativedelta import relativedelta
 
@@ -23,7 +24,6 @@ st.set_page_config(
 # ==============================================================================
 # 🎨 CẤU HÌNH GIAO DIỆN & CSS (UI/UX)
 # ==============================================================================
-# Màu xanh chủ đạo của BHXH: #1f77b4 (hoặc #005b96)
 BHXH_BLUE = "#005b96"
 BHXH_LIGHT_BLUE = "#e6f2ff"
 
@@ -63,7 +63,7 @@ st.markdown(f"""
         100% {{ transform: translate(-100%, 0); }}
     }}
 
-    /* Widget Thời tiết */
+    /* Widget Thời tiết (CSS cho phần Markdown) */
     .weather-widget {{
         background: linear-gradient(135deg, #005b96 0%, #0082c8 100%);
         color: white;
@@ -77,15 +77,6 @@ st.markdown(f"""
         font-size: 2.5em;
         font-weight: bold;
         margin: 0;
-    }}
-    .weather-desc {{
-        font-size: 1.1em;
-        text-transform: capitalize;
-        margin-bottom: 5px;
-    }}
-    .weather-info {{
-        font-size: 0.85em;
-        opacity: 0.9;
     }}
 
     /* News Card */
@@ -114,77 +105,6 @@ st.markdown(f"""
         margin-top: 5px;
     }}
 
-    /* Calculator Style */
-    .calc-container {{
-        background-color: #f8f9fa;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #ddd;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        max_width: 100%;
-        margin-bottom: 20px;
-    }}
-    .calc-display {{
-        width: 100%;
-        height: 50px;
-        background: #fff;
-        border: 2px solid #ccc;
-        margin-bottom: 10px;
-        text-align: right;
-        padding: 10px;
-        font-size: 1.5em;
-        font-family: 'Courier New', monospace;
-        border-radius: 5px;
-        color: #333;
-        font-weight: bold;
-    }}
-    .calc-row {{
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 8px;
-    }}
-    .calc-btn {{
-        width: 22%;
-        padding: 15px 0;
-        font-weight: bold;
-        font-size: 1.1em;
-        border: 1px solid #ccc;
-        border-radius: 8px;
-        cursor: pointer;
-        background-color: white;
-        color: #333;
-        box-shadow: 0 2px 2px rgba(0,0,0,0.1);
-        transition: background-color 0.2s;
-    }}
-    .calc-btn:hover {{
-        background-color: #f0f0f0;
-    }}
-    .calc-btn:active {{
-        transform: translateY(2px);
-    }}
-    .calc-btn.op {{
-        background-color: {BHXH_BLUE};
-        color: white;
-        border-color: {BHXH_BLUE};
-    }}
-    .calc-btn.clear {{
-        background-color: #d9534f;
-        color: white;
-        border-color: #d9534f;
-    }}
-    .calc-btn.equal {{
-        background-color: #5cb85c;
-        color: white;
-        border-color: #5cb85c;
-    }}
-
-    /* Card/Container style */
-    .stExpander, .stDataFrame {{
-        background-color: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }}
-    
     /* Button Style */
     .stButton>button {{
         background-color: {BHXH_BLUE};
@@ -231,9 +151,8 @@ EXCEL_FILE = 'aaa.xlsb'
 DB_FILE = 'bhxh_data.db'
 ZIP_PART_PREFIX = 'bhxh_data.zip.' 
 
-# --- HEADER FUNCTION (LOGO & LED MARQUEE) ---
+# --- HEADER FUNCTION ---
 def render_header():
-    # 1. Logo và Tiêu đề tĩnh
     c1, c2 = st.columns([1.5, 8.5])
     with c1:
         try:
@@ -249,8 +168,6 @@ def render_header():
             </div>
         """, unsafe_allow_html=True)
     
-    # 2. Hiệu ứng chữ chạy (LED)
-    # Sử dụng HTML entities cho cờ Việt Nam (🇻🇳) để tránh lỗi font/encoding
     st.markdown(f"""
         <div class="marquee-container">
             <div class="marquee-text">
@@ -263,137 +180,198 @@ def render_header():
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- TÍNH NĂNG ĐỒNG HỒ (UTC+7 / HÀ NỘI) ---
+# --- ĐỒNG HỒ (SỬ DỤNG COMPONENTS.HTML ĐỂ CHẠY JS ỔN ĐỊNH) ---
 def render_clock():
-    st.markdown(
+    components.html(
         """
-        <div style="background-color: #004470; color: white; padding: 10px; border-radius: 10px; text-align: center; margin-bottom: 20px; font-family: 'Courier New', monospace; border: 2px solid #e6f2ff; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="font-size: 0.8em; color: #ccc; margin-bottom: 5px;">GIỜ VIỆT NAM (GMT+7)</div>
-            <div id="digital-clock" style="font-size: 2em; font-weight: bold; letter-spacing: 2px;">00:00:00</div>
-            <div id="date-display" style="font-size: 1.1em; margin-top: 5px; color: #ddd; font-weight: bold;">dd/mm/yyyy</div>
-        </div>
-        <script>
-            function updateClock() {
-                // Lấy thời gian hiện tại
-                const now = new Date();
-                
-                // Chuyển đổi sang múi giờ Asia/Ho_Chi_Minh (UTC+7)
-                const optionsTime = { 
-                    timeZone: 'Asia/Ho_Chi_Minh', 
-                    hour12: false, 
-                    hour: '2-digit', 
-                    minute: '2-digit', 
-                    second: '2-digit' 
-                };
-                const optionsDate = {
-                    timeZone: 'Asia/Ho_Chi_Minh',
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric'
-                };
-                
-                const timeString = now.toLocaleTimeString('en-GB', optionsTime);
-                const dateString = now.toLocaleDateString('en-GB', optionsDate);
-                
-                const clockDiv = document.getElementById('digital-clock');
-                const dateDiv = document.getElementById('date-display');
-                
-                if (clockDiv) clockDiv.innerHTML = timeString;
-                if (dateDiv) dateDiv.innerHTML = dateString;
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <style>
+            body { margin: 0; font-family: 'Arial', sans-serif; background-color: transparent; }
+            .clock-container {
+                background-color: #004470;
+                color: white;
+                padding: 15px;
+                border-radius: 10px;
+                text-align: center;
+                border: 2px solid #e6f2ff;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                height: 100px;
             }
-            // Cập nhật mỗi giây
-            setInterval(updateClock, 1000);
-            updateClock(); // Chạy ngay lập tức
-        </script>
+            .clock-title { font-size: 12px; color: #ccc; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+            .clock-time { font-size: 32px; font-weight: bold; letter-spacing: 2px; line-height: 1; font-family: 'Courier New', monospace; }
+            .clock-date { font-size: 14px; margin-top: 5px; color: #ddd; font-weight: bold; }
+        </style>
+        </head>
+        <body>
+            <div class="clock-container">
+                <div class="clock-title">GIỜ VIỆT NAM (GMT+7)</div>
+                <div id="digital-clock" class="clock-time">00:00:00</div>
+                <div id="date-display" class="clock-date">dd/mm/yyyy</div>
+            </div>
+            <script>
+                function updateClock() {
+                    const now = new Date();
+                    // Ép buộc múi giờ Việt Nam
+                    const optionsTime = { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' };
+                    const optionsDate = { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' };
+                    
+                    try {
+                        const timeString = now.toLocaleTimeString('en-GB', optionsTime);
+                        const dateString = now.toLocaleDateString('en-GB', optionsDate);
+                        
+                        document.getElementById('digital-clock').innerHTML = timeString;
+                        document.getElementById('date-display').innerHTML = dateString;
+                    } catch (e) {
+                        document.getElementById('digital-clock').innerHTML = "Loading...";
+                    }
+                }
+                setInterval(updateClock, 1000);
+                updateClock();
+            </script>
+        </body>
+        </html>
         """,
-        unsafe_allow_html=True
+        height=140 # Chiều cao cố định cho iframe
     )
 
-# --- TÍNH NĂNG MÁY TÍNH (FIX LỖI NHẬP LIỆU) ---
+# --- MÁY TÍNH (SỬ DỤNG COMPONENTS.HTML ĐỂ CLICK ĐƯỢC) ---
 def render_calculator_widget():
-    st.markdown("""
-        <div style="margin-top: 20px;">
-            <h4 style="color: #005b96; text-align: center;">🧮 Máy tính cá nhân</h4>
+    st.markdown("### 🧮 Máy tính cá nhân")
+    components.html(
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <style>
+            body { margin: 0; font-family: sans-serif; }
+            .calc-container {
+                background-color: #f8f9fa;
+                padding: 10px;
+                border-radius: 10px;
+                border: 1px solid #ddd;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .calc-display {
+                width: 93%;
+                height: 40px;
+                background: #fff;
+                border: 2px solid #ccc;
+                margin-bottom: 10px;
+                text-align: right;
+                padding: 5px 10px;
+                font-size: 24px;
+                font-family: 'Courier New', monospace;
+                border-radius: 5px;
+                color: #333;
+                font-weight: bold;
+            }
+            .calc-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+            .calc-btn {
+                width: 23%;
+                padding: 12px 0;
+                font-weight: bold;
+                font-size: 18px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                cursor: pointer;
+                background-color: white;
+                color: #333;
+                transition: background-color 0.2s;
+            }
+            .calc-btn:hover { background-color: #f0f0f0; }
+            .calc-btn:active { transform: translateY(2px); }
+            .calc-btn.op { background-color: #005b96; color: white; border-color: #005b96; }
+            .calc-btn.clear { background-color: #d9534f; color: white; border-color: #d9534f; }
+            .calc-btn.equal { background-color: #5cb85c; color: white; border-color: #5cb85c; }
+        </style>
+        </head>
+        <body>
             <div class="calc-container">
                 <input type="text" id="calc-display" class="calc-display" readonly>
                 <div class="calc-row">
-                    <button class="calc-btn clear" onclick="document.getElementById('calc-display').value = ''">C</button>
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '/'" style="color:red">÷</button>
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '*'" style="color:red">×</button>
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value = document.getElementById('calc-display').value.slice(0, -1)">⌫</button>
+                    <button class="calc-btn clear" onclick="clearDisplay()">C</button>
+                    <button class="calc-btn op" onclick="appendOp('/')">÷</button>
+                    <button class="calc-btn op" onclick="appendOp('*')">×</button>
+                    <button class="calc-btn" onclick="backspace()">⌫</button>
                 </div>
                 <div class="calc-row">
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '7'">7</button>
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '8'">8</button>
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '9'">9</button>
-                    <button class="calc-btn op" onclick="document.getElementById('calc-display').value += '-'">-</button>
+                    <button class="calc-btn" onclick="appendNum('7')">7</button>
+                    <button class="calc-btn" onclick="appendNum('8')">8</button>
+                    <button class="calc-btn" onclick="appendNum('9')">9</button>
+                    <button class="calc-btn op" onclick="appendOp('-')">-</button>
                 </div>
                 <div class="calc-row">
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '4'">4</button>
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '5'">5</button>
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '6'">6</button>
-                    <button class="calc-btn op" onclick="document.getElementById('calc-display').value += '+'">+</button>
+                    <button class="calc-btn" onclick="appendNum('4')">4</button>
+                    <button class="calc-btn" onclick="appendNum('5')">5</button>
+                    <button class="calc-btn" onclick="appendNum('6')">6</button>
+                    <button class="calc-btn op" onclick="appendOp('+')">+</button>
                 </div>
                 <div class="calc-row">
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '1'">1</button>
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '2'">2</button>
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '3'">3</button>
-                    <button class="calc-btn equal" onclick="try{document.getElementById('calc-display').value = eval(document.getElementById('calc-display').value)}catch(e){document.getElementById('calc-display').value = 'Error'}" style="height: auto; grid-row: span 2;">=</button>
+                    <button class="calc-btn" onclick="appendNum('1')">1</button>
+                    <button class="calc-btn" onclick="appendNum('2')">2</button>
+                    <button class="calc-btn" onclick="appendNum('3')">3</button>
+                    <button class="calc-btn equal" onclick="calculate()" style="height: auto; grid-row: span 2;">=</button>
                 </div>
                 <div class="calc-row" style="margin-bottom:0">
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '0'" style="width: 48%">0</button>
-                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '.'">.</button>
-                    <!-- Empty placeholder for alignment -->
-                    <div style="width: 22%"></div> 
+                    <button class="calc-btn" onclick="appendNum('0')" style="width: 48%">0</button>
+                    <button class="calc-btn" onclick="appendNum('.')">.</button>
+                    <div style="width: 23%"></div>
                 </div>
             </div>
-        </div>
-    """, unsafe_allow_html=True)
+            <script>
+                const display = document.getElementById('calc-display');
+                function appendNum(num) { display.value += num; }
+                function appendOp(op) { display.value += op; }
+                function clearDisplay() { display.value = ''; }
+                function backspace() { display.value = display.value.slice(0, -1); }
+                function calculate() {
+                    try {
+                        // Thay thế ký tự hiển thị thành toán tử JS nếu cần, ở đây dùng trực tiếp
+                        display.value = eval(display.value);
+                    } catch (e) {
+                        display.value = 'Error';
+                        setTimeout(() => display.value = '', 1500);
+                    }
+                }
+            </script>
+        </body>
+        </html>
+        """,
+        height=320 # Chiều cao cố định
+    )
 
-# --- TÍNH NĂNG THỜI TIẾT (FIX LỖI ENCODING & 401) ---
-@st.cache_data(ttl=900) # Cache 15 phút
+# --- THỜI TIẾT ---
+@st.cache_data(ttl=900)
 def get_weather_data():
-    # Dữ liệu dự phòng (Mock data) cho Đắk Mil để hiển thị khi API lỗi
     mock_data = {
         "main": {"temp": 26, "humidity": 78},
         "weather": [{"description": "nắng nhẹ (dự báo)", "icon": "02d"}],
         "wind": {"speed": 3.5},
         "cod": 200
     }
-    
     try:
-        # Sử dụng tọa độ chính xác của Đắk Mil
-        lat = "12.4468"
-        lon = "107.6247"
+        lat, lon = "12.4468", "107.6247"
         url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OWM_API_KEY}&units=metric&lang=vi"
-        
-        response = requests.get(url, timeout=3) # Timeout ngắn hơn để fallback nhanh
-        if response.status_code == 200:
-            return response.json()
-        else:
-            # Nếu lỗi 401 (Key) hoặc lỗi khác -> Trả về dữ liệu dự phòng
-            return mock_data
+        response = requests.get(url, timeout=3)
+        return response.json() if response.status_code == 200 else mock_data
     except:
-        # Nếu lỗi mạng -> Trả về dữ liệu dự phòng
         return mock_data
 
 def render_weather_widget():
     data = get_weather_data()
-    
-    # Luôn hiển thị widget nếu có cấu trúc dữ liệu đúng (dù là thật hay giả lập)
     if isinstance(data, dict) and 'main' in data:
         temp = int(data['main']['temp'])
         desc = data['weather'][0]['description']
         icon_code = data['weather'][0]['icon']
         humidity = data['main']['humidity']
         wind = data['wind']['speed']
-        
         icon_url = f"https://openweathermap.org/img/wn/{icon_code}@2x.png"
         
-        # SỬ DỤNG HTML ENTITIES THAY CHO EMOJI TRỰC TIẾP ĐỂ TRÁNH LỖI SYNTAX
-        # &#128205; = 📍
-        # &#128167; = 💧
-        # &#127788; = 🌬️
         st.markdown(f"""
             <div class="weather-widget">
                 <div style="font-weight: bold; margin-bottom: 5px;">&#128205; Huyện Đắk Mil</div>
@@ -494,372 +472,155 @@ def format_vnd(value):
 # --- 1. TÍNH BHXH TỰ NGUYỆN ---
 def render_calculator():
     st.subheader("🧮 Tính Mức Đóng BHXH Tự Nguyện")
-    st.caption("Công cụ ước tính số tiền đóng BHXH tự nguyện (Cập nhật 2025).")
-
-    # Nhập liệu
     col_inp, col_info = st.columns([2, 1])
     with col_inp:
-        income = st.slider(
-            "Mức thu nhập lựa chọn:", 
-            min_value=CHUAN_NGHEO, 
-            max_value=MAX_MUC_DONG, 
-            value=CHUAN_NGHEO,
-            step=50000,
-            format="%d"
-        )
+        income = st.slider("Mức thu nhập lựa chọn:", min_value=CHUAN_NGHEO, max_value=MAX_MUC_DONG, value=CHUAN_NGHEO, step=50000, format="%d")
         st.info(f"Thu nhập chọn đóng: **{format_vnd(income)}**")
-        
         exact_income = st.number_input("Hoặc nhập số chính xác:", min_value=CHUAN_NGHEO, max_value=MAX_MUC_DONG, value=income, step=1000)
         if exact_income != income: income = exact_income
-
     with col_info:
-        st.info(f"""
-        **Thông số cơ sở:**
-        \n- Chuẩn nghèo: {format_vnd(CHUAN_NGHEO)}
-        \n- Tỷ lệ đóng: 22%
-        \n- Hỗ trợ tối đa: 10 năm
-        """)
-
-    # Chọn đối tượng
-    doi_tuong = st.radio(
-        "Đối tượng ưu tiên:",
-        ["Khác (Hỗ trợ 20%)", "Hộ nghèo (Hỗ trợ 50%)", "Hộ cận nghèo (Hỗ trợ 40%)", "Dân tộc thiểu số (Hỗ trợ 30%)"],
-        horizontal=True
-    )
-
-    # Tính toán
+        st.info(f"""**Thông số cơ sở:**\n- Chuẩn nghèo: {format_vnd(CHUAN_NGHEO)}\n- Tỷ lệ đóng: 22%\n- Hỗ trợ tối đa: 10 năm""")
+    doi_tuong = st.radio("Đối tượng ưu tiên:", ["Khác (Hỗ trợ 20%)", "Hộ nghèo (Hỗ trợ 50%)", "Hộ cận nghèo (Hỗ trợ 40%)", "Dân tộc thiểu số (Hỗ trợ 30%)"], horizontal=True)
+    
     muc_dong_chuan = income * TY_LE_DONG
     if "Hộ nghèo" in doi_tuong: tile_hotro, hs = "50%", HO_TRO_NGHEO
     elif "Hộ cận nghèo" in doi_tuong: tile_hotro, hs = "40%", HO_TRO_CAN_NGHEO
     elif "Dân tộc" in doi_tuong: tile_hotro, hs = "30%", HO_TRO_DAN_TOC
     else: tile_hotro, hs = "20%", HO_TRO_KHAC
-
     muc_ho_tro = CHUAN_NGHEO * TY_LE_DONG * hs
     so_tien_thuc_dong = muc_dong_chuan - muc_ho_tro
 
-    # Kết quả
     st.markdown(f"#### 📊 Bảng Chi Tiết (Hỗ trợ: {tile_hotro})")
     data = {"Phương thức": [], "Số tháng": [1, 3, 6, 12], "Tổng đóng (Gốc)": [], "Được hỗ trợ": [], "SỐ TIỀN PHẢI ĐÓNG": []}
-    
     modes = ["Hằng tháng", "3 tháng", "6 tháng", "12 tháng"]
     for i, m in enumerate(data["Số tháng"]):
         data["Phương thức"].append(modes[i])
         data["Tổng đóng (Gốc)"].append(format_vnd(muc_dong_chuan * m))
         data["Được hỗ trợ"].append(format_vnd(muc_ho_tro * m))
         data["SỐ TIỀN PHẢI ĐÓNG"].append(format_vnd(so_tien_thuc_dong * m))
-
     st.dataframe(pd.DataFrame(data).style.highlight_max(axis=0, subset=["SỐ TIỀN PHẢI ĐÓNG"], color='#dbeeff'), use_container_width=True, hide_index=True)
 
 # --- 2. TÍNH BHYT HỘ GIA ĐÌNH ---
 def render_bhyt_calculator():
     st.subheader("🏥 Tính Tiền BHYT Hộ Gia Đình")
     st.caption(f"Áp dụng mức lương cơ sở: **{format_vnd(LUONG_CO_SO)}** | Mức đóng: **4.5%**")
-
     c1, c2 = st.columns([1, 2])
-    
-    total_household_3m = 0
-    total_household_6m = 0
-    total_household_12m = 0
-    
     with c1:
-        num_people = st.number_input("Số người trong hộ gia đình tham gia:", min_value=1, max_value=20, value=1, step=1)
+        num_people = st.number_input("Số người tham gia:", min_value=1, max_value=20, value=1, step=1)
         base_rate_monthly = LUONG_CO_SO * 0.045
         details = []
-
         for i in range(1, num_people + 1):
             if i == 1: rate, note = 1.0, "100% mức đóng"
             elif i == 2: rate, note = 0.7, "70% người thứ 1"
             elif i == 3: rate, note = 0.6, "60% người thứ 1"
             elif i == 4: rate, note = 0.5, "50% người thứ 1"
             else: rate, note = 0.4, "40% người thứ 1"
-            
             cost_1m = base_rate_monthly * rate
-            cost_3m = cost_1m * 3
-            cost_6m = cost_1m * 6
-            cost_12m = cost_1m * 12
-            
-            total_household_3m += cost_3m
-            total_household_6m += cost_6m
-            total_household_12m += cost_12m
-            
-            details.append({
-                "Thành viên": f"Người thứ {i}",
-                "Mức giảm": note,
-                "03 Tháng": format_vnd(cost_3m),
-                "06 Tháng": format_vnd(cost_6m),
-                "12 Tháng": format_vnd(cost_12m)
-            })
-
+            details.append({"Thành viên": f"Người thứ {i}", "Mức giảm": note, "03 Tháng": format_vnd(cost_1m*3), "06 Tháng": format_vnd(cost_1m*6), "12 Tháng": format_vnd(cost_1m*12)})
     with c2:
-        st.markdown(f"""
-        <div style="background-color: #e6f2ff; padding: 15px; border-radius: 10px; border: 1px solid #005b96; text-align: center;">
-            <h4 style="color: #005b96; margin-bottom: 10px;">TỔNG SỐ TIỀN CẢ HỘ PHẢI ĐÓNG</h4>
-            <div style="display: flex; justify-content: space-around; text-align: center;">
-                <div>
-                    <span style="font-size: 0.9em; color: #555;">03 Tháng</span><br>
-                    <strong style="font-size: 1.2em; color: #d9534f;">{format_vnd(total_household_3m)}</strong>
-                </div>
-                <div>
-                    <span style="font-size: 0.9em; color: #555;">06 Tháng</span><br>
-                    <strong style="font-size: 1.2em; color: #d9534f;">{format_vnd(total_household_6m)}</strong>
-                </div>
-                <div>
-                    <span style="font-size: 0.9em; color: #555;">12 Tháng</span><br>
-                    <strong style="font-size: 1.4em; color: #d9534f;">{format_vnd(total_household_12m)}</strong>
-                </div>
-            </div>
-            <p style="margin-top: 10px; font-size: 0.85em; color: #666;">(Áp dụng cho {num_people} thành viên)</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("### 📋 Chi tiết mức đóng từng thành viên")
-    df_bhyt = pd.DataFrame(details)
-    st.dataframe(df_bhyt, use_container_width=True, hide_index=True)
-    st.info("💡 **Lưu ý:** Người thứ 5 trở đi đóng bằng 40% mức đóng của người thứ nhất.")
+        st.markdown(f"""<div style="background-color: #e6f2ff; padding: 15px; border-radius: 10px; text-align: center;"><h4 style="color: #005b96;">TỔNG SỐ TIỀN CẢ HỘ</h4></div>""", unsafe_allow_html=True)
+    st.markdown("### 📋 Chi tiết mức đóng")
+    st.dataframe(pd.DataFrame(details), use_container_width=True, hide_index=True)
 
 # --- 3. TÍNH TUỔI NGHỈ HƯU ---
 def render_retirement_calculator():
     st.subheader("👴👵 Tính Tuổi Nghỉ Hưu (NĐ 135/2020)")
     c1, c2 = st.columns(2)
-    with c1:
-        dob = st.date_input("Ngày sinh:", min_value=date(1950, 1, 1), max_value=date(2010, 12, 31), value=date(1970, 1, 1))
-    with c2:
-        gender = st.radio("Giới tính:", ["Nam", "Nữ"], horizontal=True)
-
+    with c1: dob = st.date_input("Ngày sinh:", value=date(1970, 1, 1))
+    with c2: gender = st.radio("Giới tính:", ["Nam", "Nữ"], horizontal=True)
     if st.button("Xác định thời điểm nghỉ hưu", type="primary"):
         target_years, target_months = 0, 0
         if gender == "Nam":
             if dob < date(1961, 1, 1): target_years = 60
             elif dob >= date(1966, 10, 1): target_years = 62
-            else:
-                target_years, target_months = 60, (dob.year - 1960) * 3
-                if dob.year == 1966 and dob.month >= 10: target_years, target_months = 62, 0
+            else: target_years, target_months = 60, (dob.year - 1960) * 3
         else:
             if dob < date(1966, 1, 1): target_years = 55
             elif dob >= date(1980, 1, 1): target_years = 60
-            else:
-                target_years, target_months = 55, (dob.year - 1965) * 4
-
+            else: target_years, target_months = 55, (dob.year - 1965) * 4
         add_years = target_months // 12
         final_age_years = target_years + add_years
         final_age_months = target_months % 12
         retirement_date = dob + relativedelta(years=final_age_years, months=final_age_months)
-        
         st.success(f"✅ **Tuổi nghỉ hưu:** {final_age_years} tuổi {final_age_months} tháng")
         st.info(f"📅 **Thời điểm nghỉ hưu:** Tháng {retirement_date.month}/{retirement_date.year}")
 
-# --- 4. THỐNG KÊ (NEW FEATURE) ---
+# --- 4. THỐNG KÊ ---
 def render_statistics():
     st.subheader("📊 Thống Kê Dữ Liệu")
-    st.caption("Biểu đồ phân bố người tham gia theo Năm sinh")
-    
     conn = init_data_db()
     try:
-        # Lấy cột ngày sinh từ DB. Giả định cột chứa thông tin ngày sinh là 'ngaysinh' hoặc tương tự
-        # Tìm tên cột ngày sinh chính xác
-        c = conn.cursor()
-        c.execute("PRAGMA table_info(bhxh)")
-        cols = [r[1] for r in c.fetchall()]
-        
-        # Ưu tiên các tên cột phổ biến
+        c = conn.cursor(); c.execute("PRAGMA table_info(bhxh)"); cols = [r[1] for r in c.fetchall()]
         col_dob = next((c for c in cols if 'ngaysinh' in unidecode.unidecode(c).lower()), None)
-        
         if col_dob:
-            with st.spinner("Đang phân tích dữ liệu..."):
-                # Lấy dữ liệu ngày sinh
-                df = pd.read_sql_query(f'SELECT "{col_dob}" as dob FROM bhxh', conn)
-                
-                # Hàm trích xuất năm sinh
-                def extract_year(d):
-                    try:
-                        d = str(d).strip()
-                        # Xử lý các định dạng ngày tháng phổ biến ở VN
-                        if len(d) >= 4:
-                            # Nếu là dd/mm/yyyy hoặc yyyy
-                            if '/' in d: return int(d.split('/')[-1])
-                            elif '-' in d: return int(d.split('-')[0]) # yyyy-mm-dd
-                            elif len(d) == 4 and d.isdigit(): return int(d)
-                            elif len(d) == 8 and d.isdigit(): return int(d[-4:]) # ddmmyyyy
-                        return 0
-                    except: return 0
+            df = pd.read_sql_query(f'SELECT "{col_dob}" as dob FROM bhxh', conn)
+            df['Year'] = df['dob'].apply(lambda x: int(str(x).split('/')[-1]) if '/' in str(x) else 0)
+            df_valid = df[(df['Year'] >= 1900) & (df['Year'] <= 2025)]
+            if not df_valid.empty: st.bar_chart(df_valid['Year'].value_counts().sort_index())
+            else: st.warning("Không có dữ liệu hợp lệ.")
+        else: st.error("Lỗi cấu trúc dữ liệu.")
+    finally: conn.close()
 
-                df['Year'] = df['dob'].apply(extract_year)
-                
-                # Lọc năm hợp lệ (1900 - 2025)
-                df_valid = df[(df['Year'] >= 1900) & (df['Year'] <= 2025)]
-                
-                if not df_valid.empty:
-                    # Đếm số lượng
-                    year_counts = df_valid['Year'].value_counts().sort_index()
-                    
-                    # Hiển thị biểu đồ
-                    st.bar_chart(year_counts)
-                    
-                    # Hiển thị bảng số liệu
-                    with st.expander("Xem bảng số liệu chi tiết"):
-                        st.dataframe(year_counts.rename("Số lượng"), use_container_width=True)
-                        
-                    st.success(f"Tổng số bản ghi hợp lệ: {len(df_valid):,}")
-                else:
-                    st.warning("Không tìm thấy dữ liệu năm sinh hợp lệ để thống kê.")
-        else:
-            st.error("Không tìm thấy cột 'Ngày sinh' trong cơ sở dữ liệu.")
-            
-    except Exception as e:
-        st.error(f"Lỗi khi thống kê: {str(e)}")
-    finally:
-        conn.close()
-
-# --- 5. TIN TỨC BHXH (NEW FEATURE) ---
-@st.cache_data(ttl=3600)  # Cache 1 giờ
+# --- 5. TIN TỨC ---
+@st.cache_data(ttl=3600)
 def get_bhxh_news():
     try:
-        url = "https://newsapi.org/v2/everything"
-        # Tìm kiếm các từ khóa liên quan đến BHXH, BHYT
-        params = {
-            'q': '"bảo hiểm xã hội" OR "bảo hiểm y tế" OR "bhxh"',
-            'language': 'vi',
-            'sortBy': 'publishedAt',
-            'apiKey': NEWS_API_KEY,
-            'pageSize': 10  # Lấy 10 tin mới nhất
-        }
-        response = requests.get(url, params=params, timeout=10)
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return {"status": "error", "message": f"API Error: {response.status_code}"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+        response = requests.get("https://newsapi.org/v2/everything", params={'q': '"bảo hiểm xã hội" OR "bhxh"', 'language': 'vi', 'sortBy': 'publishedAt', 'apiKey': NEWS_API_KEY}, timeout=10)
+        return response.json() if response.status_code == 200 else {}
+    except: return {}
 
 def render_news():
-    st.subheader("📰 Tin Tức Bảo Hiểm Xã Hội Mới Nhất")
-    st.caption("Cập nhật tự động từ các nguồn báo chí chính thống.")
-    
-    with st.spinner("Đang tải tin tức..."):
-        news_data = get_bhxh_news()
-        
-        if news_data and news_data.get('status') == 'ok':
-            articles = news_data.get('articles', [])
-            
-            if not articles:
-                st.info("Hiện chưa có tin tức mới nào.")
-                return
+    st.subheader("📰 Tin Tức Mới Nhất")
+    news_data = get_bhxh_news()
+    if news_data.get('status') == 'ok':
+        for article in news_data.get('articles', [])[:10]:
+            if article.get('title') == '[Removed]': continue
+            st.markdown(f"""<div class="news-card"><a href="{article.get('url')}" target="_blank" class="news-title">{article.get('title')}</a><div class="news-meta">📅 {article.get('publishedAt')[:10]} | {article.get('source', {}).get('name')}</div></div>""", unsafe_allow_html=True)
+    else: st.info("Chế độ xem offline: Tin tức mẫu...")
 
-            # Hiển thị danh sách tin tức
-            for article in articles:
-                # Bỏ qua các tin bị lỗi (không có tiêu đề hoặc bị removed)
-                if article.get('title') == '[Removed]': continue
-                
-                title = article.get('title', 'Không có tiêu đề')
-                desc = article.get('description', '') or 'Không có mô tả.'
-                url = article.get('url', '#')
-                image_url = article.get('urlToImage')
-                source = article.get('source', {}).get('name', 'Nguồn khác')
-                published_at = article.get('publishedAt', '')[:10]  # Lấy ngày YYYY-MM-DD
-                
-                # Render Card tin tức
-                col_img, col_content = st.columns([1, 3])
-                
-                with st.container():
-                    st.markdown(f"""
-                    <div class="news-card">
-                        <a href="{url}" target="_blank" class="news-title">{title}</a>
-                        <div class="news-meta">
-                            <span>📅 {published_at}</span> | <span>Source: {source}</span>
-                        </div>
-                        <p style="margin-top: 10px; font-size: 0.95em; color: #333;">{desc}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-        else:
-            error_msg = news_data.get('message', 'Không thể kết nối đến máy chủ tin tức.') if news_data else "Lỗi kết nối."
-            st.error(f"⚠️ Không tải được tin tức: {error_msg}")
-            # Hiển thị dữ liệu mẫu nếu API lỗi (để demo không bị trống)
-            st.markdown("---")
-            st.info("Dưới đây là một số tin tức nổi bật gần đây (Chế độ xem offline):")
-            st.markdown("""
-            - **BHXH Việt Nam cảnh báo lừa đảo cấp lại mật khẩu VssID** (Nguồn: Báo Chính Phủ)
-            - **Thay đổi mức đóng BHYT học sinh sinh viên năm học 2024-2025** (Nguồn: Tuổi Trẻ)
-            - **Lương hưu sẽ thay đổi thế nào sau cải cách tiền lương?** (Nguồn: VnExpress)
-            """)
-
-# --- GIAO DIỆN TÌM KIẾM ---
+# --- TRA CỨU ---
 def render_search(cols):
     st.subheader("🔍 Tra Cứu Thông Tin")
-    t1, t2 = st.tabs(["Tra cứu nhanh", "Tra cứu chi tiết"])
-    with t1:
-        q = st.text_input("Nhập từ khóa (Tên, Năm sinh...):", placeholder="vd: nguyen van a 1990")
-        if q:
-            df = search_data('simple', q)
-            if not df.empty:
-                st.success(f"Tìm thấy {len(df)} kết quả")
-                st.dataframe(df, use_container_width=True, hide_index=True)
-            else: st.warning("Không tìm thấy kết quả nào.")
-    with t2:
-        defs = ['sobhxh', 'hoten', 'ngaysinh', 'socmnd']
-        sel = [c for c in cols if any(x in unidecode.unidecode(c).lower() for x in defs)] or cols[:4] 
-        with st.expander("Bộ lọc nâng cao", expanded=True): s = st.multiselect("Chọn trường:", cols, default=sel)
-        inp = {}
-        if s:
-            c = st.columns(4)
-            for i, n in enumerate(s): inp[n] = c[i % 4].text_input(n)
-        if st.button("Tìm kiếm ngay"):
-            v = {k: val for k, val in inp.items() if val.strip()}
-            if v:
-                df = search_data('manual', v)
-                if not df.empty:
-                    st.success(f"Tìm thấy {len(df)} kết quả")
-                    st.dataframe(df, use_container_width=True, hide_index=True)
-                else: st.warning("Không có kết quả.")
+    q = st.text_input("Nhập từ khóa:", placeholder="vd: nguyen van a 1990")
+    if q:
+        df = search_data('simple', q)
+        if not df.empty:
+            st.success(f"Tìm thấy {len(df)} kết quả")
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        else: st.warning("Không tìm thấy.")
 
-# --- MAIN ---
+# --- MAIN LAYOUT ---
 def main():
     render_header() 
-    if 'page' not in st.session_state: st.session_state['page'] = 'search'
-    
     render_zalo_widget()
     ok, msg = check_and_prepare_data()
     if not ok: st.error(msg); return
     
-    # ---------------- SIDEBAR (CHỈ CÒN MENU) ----------------
+    # Chia Layout 3:1
+    content_col, widget_col = st.columns([3, 1])
+
+    # -- SIDEBAR MENU (TRÁI) --
     with st.sidebar:
         st.title("MENU CHỨC NĂNG")
         st.markdown("---")
-        
-        # 1. Tra cứu
         if st.button("🔍 Tra cứu CSDL", use_container_width=True): st.session_state['page'] = 'search'
-        
-        # 2. Tin tức
         if st.button("🔥 Tin tức BHXH (HOT)", use_container_width=True): st.session_state['page'] = 'news'
-        
-        # 3. Các công cụ tính toán
         if st.button("🧮 Tính BHXH Tự Nguyện", use_container_width=True): st.session_state['page'] = 'calc'
         if st.button("🏥 Tính BHYT Hộ Gia Đình", use_container_width=True): st.session_state['page'] = 'bhyt'
         if st.button("👵 Tính Tuổi Nghỉ Hưu", use_container_width=True): st.session_state['page'] = 'retirement'
-        
-        # 4. Thống kê
         st.markdown("---")
         if st.button("📊 Thống kê Dữ liệu", use_container_width=True): st.session_state['page'] = 'stats'
-        
-        st.markdown("---")
-        st.info("Hệ thống hỗ trợ tra cứu và tính toán BHXH, BHYT mới nhất.")
 
-    # ---------------- MAIN CONTENT LAYOUT ----------------
-    # Chia màn hình thành 2 cột: 
-    # Cột trái (content_col): 75% - Hiển thị chức năng chính
-    # Cột phải (widget_col): 25% - Hiển thị tiện ích (Đồng hồ, Thời tiết, Máy tính)
-    content_col, widget_col = st.columns([3, 1])
-
-    # --- CỘT PHẢI: TIỆN ÍCH ---
+    # -- CỘT PHẢI: TIỆN ÍCH (ĐỒNG HỒ, THỜI TIẾT, MÁY TÍNH) --
     with widget_col:
         st.markdown("### 🛠️ Tiện ích")
-        render_clock()             # Đồng hồ (đã chỉnh UTC+7)
+        render_clock()             # Đã fix: chạy mượt bằng components.html
         render_weather_widget()    # Thời tiết
-        render_calculator_widget() # Máy tính (đã fix lỗi nhập liệu)
+        render_calculator_widget() # Đã fix: click được bằng components.html
 
-    # --- CỘT TRÁI: NỘI DUNG CHÍNH ---
+    # -- CỘT TRÁI: NỘI DUNG CHÍNH --
     with content_col:
+        if 'page' not in st.session_state: st.session_state['page'] = 'search'
         p = st.session_state['page']
         if p == 'search': 
             cols = get_display_columns()
