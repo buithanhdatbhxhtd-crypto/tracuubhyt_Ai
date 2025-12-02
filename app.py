@@ -7,7 +7,8 @@ import time
 import os
 import zipfile
 import glob
-from datetime import date, timedelta
+import requests  # Thêm thư viện requests để gọi API thời tiết
+from datetime import date, timedelta, datetime
 from dateutil.relativedelta import relativedelta
 
 # --- CẤU HÌNH ỨNG DỤNG ---
@@ -61,6 +62,31 @@ st.markdown(f"""
         100% {{ transform: translate(-100%, 0); }}
     }}
 
+    /* Widget Thời tiết */
+    .weather-widget {{
+        background: linear-gradient(135deg, #005b96 0%, #0082c8 100%);
+        color: white;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        text-align: center;
+    }}
+    .weather-temp {{
+        font-size: 2.5em;
+        font-weight: bold;
+        margin: 0;
+    }}
+    .weather-desc {{
+        font-size: 1.1em;
+        text-transform: capitalize;
+        margin-bottom: 5px;
+    }}
+    .weather-info {{
+        font-size: 0.85em;
+        opacity: 0.9;
+    }}
+
     /* Card/Container style */
     .stExpander, .stDataFrame {{
         background-color: white;
@@ -93,7 +119,8 @@ st.markdown(f"""
 # ==============================================================================
 # 🔑 CẤU HÌNH HỆ THỐNG
 # ==============================================================================
-ZALO_PHONE_NUMBER = "0986053006" 
+ZALO_PHONE_NUMBER = "0986053006"
+OWM_API_KEY = "3ec0c3bf9ff1be61e3c94060a1037713" # API Key Thời tiết
 
 # CÁC HẰNG SỐ TÍNH BHXH TỰ NGUYỆN (CẬP NHẬT 2025)
 CHUAN_NGHEO = 1500000 
@@ -117,11 +144,10 @@ def render_header():
     # 1. Logo và Tiêu đề tĩnh
     c1, c2 = st.columns([1.5, 8.5])
     with c1:
-        # Cố gắng hiển thị logo từ URL ổn định hơn
         try:
             st.image("https://upload.wikimedia.org/wikipedia/vi/thumb/a/a2/Logo_BHXH_VN.png/300px-Logo_BHXH_VN.png", width=100)
         except:
-            st.warning("Logo Error") # Fallback nếu lỗi mạng
+            st.warning("Logo Error") 
             
     with c2:
         st.markdown(f"""
@@ -143,6 +169,48 @@ def render_header():
 # --- WIDGET ZALO ---
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
+
+# --- TÍNH NĂNG THỜI TIẾT ---
+@st.cache_data(ttl=900) # Cache 15 phút để tránh gọi API quá nhiều
+def get_weather_data():
+    try:
+        # Tìm kiếm theo tên "Dak Mil" (OpenWeatherMap dùng dữ liệu không dấu tốt hơn)
+        url = f"http://api.openweathermap.org/data/2.5/weather?q=Dak Mil&appid={OWM_API_KEY}&units=metric&lang=vi"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except:
+        return None
+    return None
+
+def render_weather_widget():
+    data = get_weather_data()
+    
+    if data:
+        temp = int(data['main']['temp'])
+        desc = data['weather'][0]['description']
+        icon_code = data['weather'][0]['icon']
+        humidity = data['main']['humidity']
+        wind = data['wind']['speed']
+        
+        icon_url = f"http://openweathermap.org/img/wn/{icon_code}@2x.png"
+        
+        st.markdown(f"""
+            <div class="weather-widget">
+                <div style="font-weight: bold; margin-bottom: 5px;">📍 Huyện Đắk Mil (cũ)</div>
+                <div style="font-size: 0.8em; margin-bottom: 10px;">Tỉnh Đắk Nông (cũ)</div>
+                <div style="display: flex; align-items: center; justify-content: center;">
+                    <img src="{icon_url}" width="60">
+                    <p class="weather-temp">{temp}°C</p>
+                </div>
+                <p class="weather-desc">{desc}</p>
+                <div class="weather-info">
+                    💧 Độ ẩm: {humidity}% | 🌬️ Gió: {wind} m/s
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.sidebar.warning("⚠️ Không cập nhật được thời tiết")
 
 # --- XỬ LÝ DỮ LIỆU ---
 def clean_text(text): return unidecode.unidecode(str(text)).lower().replace(' ', '') if pd.notna(text) else ""
@@ -483,10 +551,13 @@ def main():
     
     # Sidebar
     with st.sidebar:
+        # Hiển thị Widget Thời tiết ở đầu Sidebar
+        render_weather_widget()
+        
         st.title("MENU CHỨC NĂNG")
         st.markdown("---")
         if st.button("🔍 Tra cứu CSDL", use_container_width=True): st.session_state['page'] = 'search'
-        if st.button("📊 Thống kê Dữ liệu", use_container_width=True): st.session_state['page'] = 'stats' # Nút mới
+        if st.button("📊 Thống kê Dữ liệu", use_container_width=True): st.session_state['page'] = 'stats'
         if st.button("🧮 Tính BHXH Tự Nguyện", use_container_width=True): st.session_state['page'] = 'calc'
         if st.button("🏥 Tính BHYT Hộ Gia Đình", use_container_width=True): st.session_state['page'] = 'bhyt'
         if st.button("👵 Tính Tuổi Nghỉ Hưu", use_container_width=True): st.session_state['page'] = 'retirement'
@@ -499,7 +570,7 @@ def main():
     if p == 'search': 
         cols = get_display_columns()
         if cols: render_search(cols)
-    elif p == 'stats': render_statistics() # Trang mới
+    elif p == 'stats': render_statistics()
     elif p == 'calc': render_calculator()
     elif p == 'bhyt': render_bhyt_calculator()
     elif p == 'retirement': render_retirement_calculator()
