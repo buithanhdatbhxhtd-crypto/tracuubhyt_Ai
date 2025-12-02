@@ -36,18 +36,29 @@ st.markdown(f"""
         font-family: 'Arial', sans-serif;
     }}
     
-    /* Header Container */
-    .header-text h1 {{
-        margin: 0;
-        font-size: 1.8rem;
-        text-transform: uppercase;
-        color: {BHXH_BLUE};
+    /* Hiệu ứng LED chạy chữ */
+    .marquee-container {{
+        width: 100%;
+        overflow: hidden;
+        white-space: nowrap;
+        background-color: {BHXH_LIGHT_BLUE};
+        padding: 10px 0;
+        border-radius: 5px;
+        border: 1px solid #dcdcdc;
+        margin-bottom: 20px;
     }}
-    .header-text p {{
-        margin: 0;
-        font-style: italic;
-        color: #555;
-        font-weight: 500;
+    .marquee-text {{
+        display: inline-block;
+        padding-left: 100%;
+        animation: marquee 20s linear infinite;
+        color: {BHXH_BLUE};
+        font-weight: bold;
+        font-size: 1.2rem;
+        text-transform: uppercase;
+    }}
+    @keyframes marquee {{
+        0% {{ transform: translate(0, 0); }}
+        100% {{ transform: translate(-100%, 0); }}
     }}
 
     /* Card/Container style */
@@ -101,27 +112,39 @@ EXCEL_FILE = 'aaa.xlsb'
 DB_FILE = 'bhxh_data.db'
 ZIP_PART_PREFIX = 'bhxh_data.zip.' 
 
-# --- HEADER FUNCTION (ĐÃ FIX LOGO) ---
+# --- HEADER FUNCTION (LOGO & LED MARQUEE) ---
 def render_header():
-    # Sử dụng st.columns để căn chỉnh logo và text đẹp hơn
-    c1, c2 = st.columns([1, 8])
+    # 1. Logo và Tiêu đề tĩnh
+    c1, c2 = st.columns([1.5, 8.5])
     with c1:
-        # Logo BHXH Việt Nam
-        st.image("https://upload.wikimedia.org/wikipedia/vi/thumb/a/a2/Logo_BHXH_VN.png/300px-Logo_BHXH_VN.png", width=90)
+        # Cố gắng hiển thị logo từ URL ổn định hơn
+        try:
+            st.image("https://upload.wikimedia.org/wikipedia/vi/thumb/a/a2/Logo_BHXH_VN.png/300px-Logo_BHXH_VN.png", width=100)
+        except:
+            st.warning("Logo Error") # Fallback nếu lỗi mạng
+            
     with c2:
         st.markdown(f"""
-            <div class="header-text" style="padding-top: 10px;">
-                <h1>BẢO HIỂM XÃ HỘI VIỆT NAM</h1>
-                <p>Tất cả vì an sinh xã hội, vì người tham gia BHXH, BHYT</p>
+            <div style="padding-top: 10px;">
+                <h1 style="margin:0; font-size: 2rem;">HỆ THỐNG TRA CỨU & TÍNH TOÁN BHXH</h1>
+                <p style="margin:0; color: #666;">Cổng thông tin tiện ích hỗ trợ người dân</p>
             </div>
-            <hr style="margin-top: 5px; border-top: 2px solid {BHXH_BLUE};">
         """, unsafe_allow_html=True)
+    
+    # 2. Hiệu ứng chữ chạy (LED)
+    st.markdown(f"""
+        <div class="marquee-container">
+            <div class="marquee-text">
+                BẢO HIỂM XÃ HỘI VIỆT NAM - TẤT CẢ VÌ AN SINH XÃ HỘI, VÌ NGƯỜI THAM GIA BHXH, BHYT 🇻🇳
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
 # --- WIDGET ZALO ---
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- XỬ LÝ DỮ LIỆU (GIỮ NGUYÊN) ---
+# --- XỬ LÝ DỮ LIỆU ---
 def clean_text(text): return unidecode.unidecode(str(text)).lower().replace(' ', '') if pd.notna(text) else ""
 
 def init_data_db():
@@ -176,7 +199,7 @@ def get_display_columns():
     except: return []
     finally: conn.close()
 
-# --- TÌM KIẾM (GIỮ NGUYÊN LOGIC) ---
+# --- TÌM KIẾM ---
 def search_data(mode, q):
     conn = init_data_db(); cols = get_display_columns()
     if not cols: return pd.DataFrame()
@@ -260,7 +283,7 @@ def render_calculator():
 
     st.dataframe(pd.DataFrame(data).style.highlight_max(axis=0, subset=["SỐ TIỀN PHẢI ĐÓNG"], color='#dbeeff'), use_container_width=True, hide_index=True)
 
-# --- 2. TÍNH BHYT HỘ GIA ĐÌNH (UPDATE: 3, 6, 12 THÁNG) ---
+# --- 2. TÍNH BHYT HỘ GIA ĐÌNH ---
 def render_bhyt_calculator():
     st.subheader("🏥 Tính Tiền BHYT Hộ Gia Đình")
     st.caption(f"Áp dụng mức lương cơ sở: **{format_vnd(LUONG_CO_SO)}** | Mức đóng: **4.5%**")
@@ -273,37 +296,21 @@ def render_bhyt_calculator():
     
     with c1:
         num_people = st.number_input("Số người trong hộ gia đình tham gia:", min_value=1, max_value=20, value=1, step=1)
-        
-        # Tính toán
-        base_rate_monthly = LUONG_CO_SO * 0.045 # 100% mức đóng 1 tháng
+        base_rate_monthly = LUONG_CO_SO * 0.045
         details = []
 
         for i in range(1, num_people + 1):
-            if i == 1:
-                rate = 1.0
-                note = "100% mức đóng"
-            elif i == 2:
-                rate = 0.7
-                note = "70% người thứ 1"
-            elif i == 3:
-                rate = 0.6
-                note = "60% người thứ 1"
-            elif i == 4:
-                rate = 0.5
-                note = "50% người thứ 1"
-            else:
-                rate = 0.4
-                note = "40% người thứ 1"
+            if i == 1: rate, note = 1.0, "100% mức đóng"
+            elif i == 2: rate, note = 0.7, "70% người thứ 1"
+            elif i == 3: rate, note = 0.6, "60% người thứ 1"
+            elif i == 4: rate, note = 0.5, "50% người thứ 1"
+            else: rate, note = 0.4, "40% người thứ 1"
             
-            # Tiền đóng 1 tháng
             cost_1m = base_rate_monthly * rate
-            
-            # Tính các mốc
             cost_3m = cost_1m * 3
             cost_6m = cost_1m * 6
             cost_12m = cost_1m * 12
             
-            # Cộng dồn tổng hộ
             total_household_3m += cost_3m
             total_household_6m += cost_6m
             total_household_12m += cost_12m
@@ -341,10 +348,9 @@ def render_bhyt_calculator():
     st.markdown("### 📋 Chi tiết mức đóng từng thành viên")
     df_bhyt = pd.DataFrame(details)
     st.dataframe(df_bhyt, use_container_width=True, hide_index=True)
-    
     st.info("💡 **Lưu ý:** Người thứ 5 trở đi đóng bằng 40% mức đóng của người thứ nhất.")
 
-# --- 3. TÍNH TUỔI NGHỈ HƯU (GIỮ NGUYÊN) ---
+# --- 3. TÍNH TUỔI NGHỈ HƯU ---
 def render_retirement_calculator():
     st.subheader("👴👵 Tính Tuổi Nghỉ Hưu (NĐ 135/2020)")
     c1, c2 = st.columns(2)
@@ -355,8 +361,6 @@ def render_retirement_calculator():
 
     if st.button("Xác định thời điểm nghỉ hưu", type="primary"):
         target_years, target_months = 0, 0
-        
-        # Logic NĐ 135
         if gender == "Nam":
             if dob < date(1961, 1, 1): target_years = 60
             elif dob >= date(1966, 10, 1): target_years = 62
@@ -372,13 +376,74 @@ def render_retirement_calculator():
         add_years = target_months // 12
         final_age_years = target_years + add_years
         final_age_months = target_months % 12
-        
         retirement_date = dob + relativedelta(years=final_age_years, months=final_age_months)
         
         st.success(f"✅ **Tuổi nghỉ hưu:** {final_age_years} tuổi {final_age_months} tháng")
         st.info(f"📅 **Thời điểm nghỉ hưu:** Tháng {retirement_date.month}/{retirement_date.year}")
 
-# --- GIAO DIỆN TÌM KIẾM (GIỮ NGUYÊN) ---
+# --- 4. THỐNG KÊ (NEW FEATURE) ---
+def render_statistics():
+    st.subheader("📊 Thống Kê Dữ Liệu")
+    st.caption("Biểu đồ phân bố người tham gia theo Năm sinh")
+    
+    conn = init_data_db()
+    try:
+        # Lấy cột ngày sinh từ DB. Giả định cột chứa thông tin ngày sinh là 'ngaysinh' hoặc tương tự
+        # Tìm tên cột ngày sinh chính xác
+        c = conn.cursor()
+        c.execute("PRAGMA table_info(bhxh)")
+        cols = [r[1] for r in c.fetchall()]
+        
+        # Ưu tiên các tên cột phổ biến
+        col_dob = next((c for c in cols if 'ngaysinh' in unidecode.unidecode(c).lower()), None)
+        
+        if col_dob:
+            with st.spinner("Đang phân tích dữ liệu..."):
+                # Lấy dữ liệu ngày sinh
+                df = pd.read_sql_query(f'SELECT "{col_dob}" as dob FROM bhxh', conn)
+                
+                # Hàm trích xuất năm sinh
+                def extract_year(d):
+                    try:
+                        d = str(d).strip()
+                        # Xử lý các định dạng ngày tháng phổ biến ở VN
+                        if len(d) >= 4:
+                            # Nếu là dd/mm/yyyy hoặc yyyy
+                            if '/' in d: return int(d.split('/')[-1])
+                            elif '-' in d: return int(d.split('-')[0]) # yyyy-mm-dd
+                            elif len(d) == 4 and d.isdigit(): return int(d)
+                            elif len(d) == 8 and d.isdigit(): return int(d[-4:]) # ddmmyyyy
+                        return 0
+                    except: return 0
+
+                df['Year'] = df['dob'].apply(extract_year)
+                
+                # Lọc năm hợp lệ (1900 - 2025)
+                df_valid = df[(df['Year'] >= 1900) & (df['Year'] <= 2025)]
+                
+                if not df_valid.empty:
+                    # Đếm số lượng
+                    year_counts = df_valid['Year'].value_counts().sort_index()
+                    
+                    # Hiển thị biểu đồ
+                    st.bar_chart(year_counts)
+                    
+                    # Hiển thị bảng số liệu
+                    with st.expander("Xem bảng số liệu chi tiết"):
+                        st.dataframe(year_counts.rename("Số lượng"), use_container_width=True)
+                        
+                    st.success(f"Tổng số bản ghi hợp lệ: {len(df_valid):,}")
+                else:
+                    st.warning("Không tìm thấy dữ liệu năm sinh hợp lệ để thống kê.")
+        else:
+            st.error("Không tìm thấy cột 'Ngày sinh' trong cơ sở dữ liệu.")
+            
+    except Exception as e:
+        st.error(f"Lỗi khi thống kê: {str(e)}")
+    finally:
+        conn.close()
+
+# --- GIAO DIỆN TÌM KIẾM ---
 def render_search(cols):
     st.subheader("🔍 Tra Cứu Thông Tin")
     t1, t2 = st.tabs(["Tra cứu nhanh", "Tra cứu chi tiết"])
@@ -409,7 +474,7 @@ def render_search(cols):
 
 # --- MAIN ---
 def main():
-    render_header() # Render Logo Header
+    render_header() 
     if 'page' not in st.session_state: st.session_state['page'] = 'search'
     
     render_zalo_widget()
@@ -421,8 +486,9 @@ def main():
         st.title("MENU CHỨC NĂNG")
         st.markdown("---")
         if st.button("🔍 Tra cứu CSDL", use_container_width=True): st.session_state['page'] = 'search'
+        if st.button("📊 Thống kê Dữ liệu", use_container_width=True): st.session_state['page'] = 'stats' # Nút mới
         if st.button("🧮 Tính BHXH Tự Nguyện", use_container_width=True): st.session_state['page'] = 'calc'
-        if st.button("🏥 Tính BHYT Hộ Gia Đình", use_container_width=True): st.session_state['page'] = 'bhyt' # Nút mới
+        if st.button("🏥 Tính BHYT Hộ Gia Đình", use_container_width=True): st.session_state['page'] = 'bhyt'
         if st.button("👵 Tính Tuổi Nghỉ Hưu", use_container_width=True): st.session_state['page'] = 'retirement'
         
         st.markdown("---")
@@ -433,8 +499,9 @@ def main():
     if p == 'search': 
         cols = get_display_columns()
         if cols: render_search(cols)
+    elif p == 'stats': render_statistics() # Trang mới
     elif p == 'calc': render_calculator()
-    elif p == 'bhyt': render_bhyt_calculator() # Trang mới
+    elif p == 'bhyt': render_bhyt_calculator()
     elif p == 'retirement': render_retirement_calculator()
 
 if __name__ == '__main__':
