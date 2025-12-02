@@ -562,21 +562,78 @@ def render_statistics():
     finally: conn.close()
 
 # --- 5. TIN TỨC ---
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=1800)  # Giảm cache xuống 30p để cập nhật tin nhanh hơn
 def get_bhxh_news():
     try:
-        response = requests.get("https://newsapi.org/v2/everything", params={'q': '"bảo hiểm xã hội" OR "bhxh"', 'language': 'vi', 'sortBy': 'publishedAt', 'apiKey': NEWS_API_KEY}, timeout=10)
-        return response.json() if response.status_code == 200 else {}
-    except: return {}
+        url = "https://newsapi.org/v2/everything"
+        # Tìm kiếm các từ khóa liên quan đến BHXH, BHYT
+        params = {
+            'q': 'bảo hiểm xã hội OR bảo hiểm y tế OR bhxh OR bhyt', # Bỏ ngoặc kép để tìm rộng hơn
+            'language': 'vi',
+            'sortBy': 'publishedAt',
+            'apiKey': NEWS_API_KEY,
+            'pageSize': 50  # Tăng lên 50 tin
+        }
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"status": "error", "message": f"API Error: {response.status_code}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 def render_news():
-    st.subheader("📰 Tin Tức Mới Nhất")
-    news_data = get_bhxh_news()
-    if news_data.get('status') == 'ok':
-        for article in news_data.get('articles', [])[:10]:
-            if article.get('title') == '[Removed]': continue
-            st.markdown(f"""<div class="news-card"><a href="{article.get('url')}" target="_blank" class="news-title">{article.get('title')}</a><div class="news-meta">📅 {article.get('publishedAt')[:10]} | {article.get('source', {}).get('name')}</div></div>""", unsafe_allow_html=True)
-    else: st.info("Chế độ xem offline: Tin tức mẫu...")
+    st.subheader("📰 Tin Tức Bảo Hiểm Xã Hội Mới Nhất")
+    st.caption("Cập nhật tự động từ các nguồn báo chí chính thống.")
+    
+    with st.spinner("Đang tải tin tức..."):
+        news_data = get_bhxh_news()
+        
+        if news_data and news_data.get('status') == 'ok':
+            articles = news_data.get('articles', [])
+            
+            if not articles:
+                st.info("Hiện chưa có tin tức mới nào.")
+                return
+
+            # Hiển thị danh sách tin tức (tối đa 50 tin)
+            for article in articles[:50]:
+                # Bỏ qua các tin bị lỗi (không có tiêu đề hoặc bị removed)
+                if article.get('title') == '[Removed]': continue
+                
+                title = article.get('title', 'Không có tiêu đề')
+                desc = article.get('description', '') or 'Không có mô tả.'
+                url = article.get('url', '#')
+                image_url = article.get('urlToImage')
+                source = article.get('source', {}).get('name', 'Nguồn khác')
+                published_at = article.get('publishedAt', '')[:10]  # Lấy ngày YYYY-MM-DD
+                
+                # Render Card tin tức
+                col_img, col_content = st.columns([1, 3])
+                
+                with st.container():
+                    st.markdown(f"""
+                    <div class="news-card">
+                        <a href="{url}" target="_blank" class="news-title">{title}</a>
+                        <div class="news-meta">
+                            <span>📅 {published_at}</span> | <span>Source: {source}</span>
+                        </div>
+                        <p style="margin-top: 10px; font-size: 0.95em; color: #333;">{desc}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+        else:
+            error_msg = news_data.get('message', 'Không thể kết nối đến máy chủ tin tức.') if news_data else "Lỗi kết nối."
+            st.error(f"⚠️ Không tải được tin tức: {error_msg}")
+            # Hiển thị dữ liệu mẫu nếu API lỗi (để demo không bị trống)
+            st.markdown("---")
+            st.info("Dưới đây là một số tin tức nổi bật gần đây (Chế độ xem offline):")
+            st.markdown("""
+            - **BHXH Việt Nam cảnh báo lừa đảo cấp lại mật khẩu VssID** (Nguồn: Báo Chính Phủ)
+            - **Thay đổi mức đóng BHYT học sinh sinh viên năm học 2024-2025** (Nguồn: Tuổi Trẻ)
+            - **Lương hưu sẽ thay đổi thế nào sau cải cách tiền lương?** (Nguồn: VnExpress)
+            """)
 
 # --- TRA CỨU ---
 def render_search(cols):
