@@ -8,7 +8,7 @@ import time
 import os
 import zipfile
 import glob
-import requests  # Thêm thư viện requests để gọi API thời tiết
+import requests  # Thêm thư viện requests để gọi API thời tiết và tin tức
 from datetime import date, timedelta, datetime
 from dateutil.relativedelta import relativedelta
 
@@ -88,6 +88,32 @@ st.markdown(f"""
         opacity: 0.9;
     }}
 
+    /* News Card */
+    .news-card {{
+        background-color: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 15px;
+        border-left: 5px solid {BHXH_BLUE};
+        transition: transform 0.2s;
+    }}
+    .news-card:hover {{
+        transform: translateY(-3px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }}
+    .news-title {{
+        font-weight: bold;
+        color: {BHXH_BLUE};
+        font-size: 1.1em;
+        text-decoration: none;
+    }}
+    .news-meta {{
+        font-size: 0.85em;
+        color: #666;
+        margin-top: 5px;
+    }}
+
     /* Card/Container style */
     .stExpander, .stDataFrame {{
         background-color: white;
@@ -122,6 +148,7 @@ st.markdown(f"""
 # ==============================================================================
 ZALO_PHONE_NUMBER = "0986053006"
 OWM_API_KEY = "3ec0c3bf9ff1be61e3c94060a1037713" # API Key Thời tiết
+NEWS_API_KEY = "39779fb4a0634d8fbfb86e2668d955e0" # API Key Tin tức
 
 # CÁC HẰNG SỐ TÍNH BHXH TỰ NGUYỆN (CẬP NHẬT 2025)
 CHUAN_NGHEO = 1500000 
@@ -532,6 +559,80 @@ def render_statistics():
     finally:
         conn.close()
 
+# --- 5. TIN TỨC BHXH (NEW FEATURE) ---
+@st.cache_data(ttl=3600)  # Cache 1 giờ
+def get_bhxh_news():
+    try:
+        url = "https://newsapi.org/v2/everything"
+        # Tìm kiếm các từ khóa liên quan đến BHXH, BHYT
+        params = {
+            'q': '"bảo hiểm xã hội" OR "bảo hiểm y tế" OR "bhxh"',
+            'language': 'vi',
+            'sortBy': 'publishedAt',
+            'apiKey': NEWS_API_KEY,
+            'pageSize': 10  # Lấy 10 tin mới nhất
+        }
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"status": "error", "message": f"API Error: {response.status_code}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def render_news():
+    st.subheader("📰 Tin Tức Bảo Hiểm Xã Hội Mới Nhất")
+    st.caption("Cập nhật tự động từ các nguồn báo chí chính thống.")
+    
+    with st.spinner("Đang tải tin tức..."):
+        news_data = get_bhxh_news()
+        
+        if news_data and news_data.get('status') == 'ok':
+            articles = news_data.get('articles', [])
+            
+            if not articles:
+                st.info("Hiện chưa có tin tức mới nào.")
+                return
+
+            # Hiển thị danh sách tin tức
+            for article in articles:
+                # Bỏ qua các tin bị lỗi (không có tiêu đề hoặc bị removed)
+                if article.get('title') == '[Removed]': continue
+                
+                title = article.get('title', 'Không có tiêu đề')
+                desc = article.get('description', '') or 'Không có mô tả.'
+                url = article.get('url', '#')
+                image_url = article.get('urlToImage')
+                source = article.get('source', {}).get('name', 'Nguồn khác')
+                published_at = article.get('publishedAt', '')[:10]  # Lấy ngày YYYY-MM-DD
+                
+                # Render Card tin tức
+                col_img, col_content = st.columns([1, 3])
+                
+                with st.container():
+                    st.markdown(f"""
+                    <div class="news-card">
+                        <a href="{url}" target="_blank" class="news-title">{title}</a>
+                        <div class="news-meta">
+                            <span>📅 {published_at}</span> | <span>Source: {source}</span>
+                        </div>
+                        <p style="margin-top: 10px; font-size: 0.95em; color: #333;">{desc}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+        else:
+            error_msg = news_data.get('message', 'Không thể kết nối đến máy chủ tin tức.') if news_data else "Lỗi kết nối."
+            st.error(f"⚠️ Không tải được tin tức: {error_msg}")
+            # Hiển thị dữ liệu mẫu nếu API lỗi (để demo không bị trống)
+            st.markdown("---")
+            st.info("Dưới đây là một số tin tức nổi bật gần đây (Chế độ xem offline):")
+            st.markdown("""
+            - **BHXH Việt Nam cảnh báo lừa đảo cấp lại mật khẩu VssID** (Nguồn: Báo Chính Phủ)
+            - **Thay đổi mức đóng BHYT học sinh sinh viên năm học 2024-2025** (Nguồn: Tuổi Trẻ)
+            - **Lương hưu sẽ thay đổi thế nào sau cải cách tiền lương?** (Nguồn: VnExpress)
+            """)
+
 # --- GIAO DIỆN TÌM KIẾM ---
 def render_search(cols):
     st.subheader("🔍 Tra Cứu Thông Tin")
@@ -579,6 +680,7 @@ def main():
         st.markdown("---")
         if st.button("🔍 Tra cứu CSDL", use_container_width=True): st.session_state['page'] = 'search'
         if st.button("📊 Thống kê Dữ liệu", use_container_width=True): st.session_state['page'] = 'stats'
+        if st.button("📰 Tin tức BHXH", use_container_width=True): st.session_state['page'] = 'news' # Menu mới
         if st.button("🧮 Tính BHXH Tự Nguyện", use_container_width=True): st.session_state['page'] = 'calc'
         if st.button("🏥 Tính BHYT Hộ Gia Đình", use_container_width=True): st.session_state['page'] = 'bhyt'
         if st.button("👵 Tính Tuổi Nghỉ Hưu", use_container_width=True): st.session_state['page'] = 'retirement'
@@ -592,6 +694,7 @@ def main():
         cols = get_display_columns()
         if cols: render_search(cols)
     elif p == 'stats': render_statistics()
+    elif p == 'news': render_news() # Trang mới
     elif p == 'calc': render_calculator()
     elif p == 'bhyt': render_bhyt_calculator()
     elif p == 'retirement': render_retirement_calculator()
