@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN AI SECURE) ---
+# --- HỆ THỐNG BHXH CHUYÊN NGHIỆP (PHIÊN BẢN AI SECURE + DEMO MODE) ---
 import streamlit as st
 import streamlit.components.v1 as components 
 import pandas as pd
@@ -106,7 +106,7 @@ def render_header():
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
 
-# --- 1. CHỨC NĂNG AI: CHATBOT ---
+# --- 1. CHỨC NĂNG AI: CHATBOT (CÓ FALLBACK) ---
 def render_chatbot_ai():
     st.subheader("🤖 Trợ lý AI Chuyên gia BHXH")
     st.caption("Hỏi đáp mọi vấn đề về Luật BHXH, BHYT, chế độ thai sản, ốm đau, hưu trí...")
@@ -148,9 +148,19 @@ def render_chatbot_ai():
                 message_placeholder.markdown(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
             except Exception as e:
-                st.error(f"Lỗi AI: {str(e)}")
+                # XỬ LÝ LỖI 429/QUOTA ĐỂ KHÔNG BỊ CRASH
+                error_msg = str(e)
+                if "insufficient_quota" in error_msg or "429" in error_msg:
+                    st.warning("⚠️ **Lưu ý:** Tài khoản OpenAI API đã hết hạn mức (hết tiền). Hệ thống đang chuyển sang chế độ trả lời mẫu (Demo Mode).")
+                    
+                    fallback_response = "Chào bạn! Hiện tại kết nối đến trí tuệ nhân tạo (AI) đang bị gián đoạn do hết hạn mức sử dụng.\n\nTuy nhiên, với câu hỏi của bạn, tôi xin đưa ra thông tin tham khảo chung:\n\n- Nếu bạn hỏi về **BHXH tự nguyện**: Mức đóng là 22% mức thu nhập lựa chọn.\n- Nếu bạn hỏi về **BHYT hộ gia đình**: Mức đóng giảm dần (Người thứ nhất 100%, thứ hai 70%...).\n\nBạn vui lòng nạp thêm tín dụng vào tài khoản OpenAI để tiếp tục sử dụng tính năng Chatbot thông minh này nhé! 😊"
+                    
+                    message_placeholder.markdown(fallback_response)
+                    st.session_state.messages.append({"role": "assistant", "content": fallback_response})
+                else:
+                    st.error(f"Lỗi kết nối AI: {str(e)}")
 
-# --- 2. CHỨC NĂNG AI: VIẾT BÀI TUYÊN TRUYỀN ---
+# --- 2. CHỨC NĂNG AI: VIẾT BÀI TUYÊN TRUYỀN (CÓ FALLBACK) ---
 def render_content_creator():
     st.subheader("✍️ AI Viết Bài Tuyên Truyền")
     
@@ -183,7 +193,35 @@ def render_content_creator():
                 st.success("Đã tạo xong!")
                 st.text_area("Nội dung:", value=content, height=400)
         except Exception as e:
-            st.error(f"Lỗi: {e}")
+            # XỬ LÝ LỖI 429/QUOTA: TẠO BÀI VIẾT MẪU
+            error_msg = str(e)
+            if "insufficient_quota" in error_msg or "429" in error_msg:
+                st.warning("⚠️ **Lưu ý:** API Key hết hạn mức. Đây là bài viết mẫu được tạo tự động (Chế độ Demo):")
+                
+                mock_content = f"""
+🌟 **{topic.upper()} - VÌ LỢI ÍCH CỦA BẠN!** 🌟
+
+👋 Xin chào các bạn, đặc biệt là {target_audience}!
+
+Hôm nay, mình muốn chia sẻ một chút về chủ đề: **{topic}**.
+Bạn có biết rằng tham gia BHXH, BHYT chính là "tấm khiên" bảo vệ vững chắc nhất cho bản thân và gia đình trước những rủi ro trong cuộc sống?
+
+✅ **Lợi ích mang lại:**
+- 🏥 Được chăm sóc sức khỏe với chi phí thấp nhất.
+- 💰 Tích lũy thời gian để hưởng lương hưu an nhàn.
+- 🛡️ Được nhà nước bảo hộ quyền lợi.
+
+💡 **Đừng chần chừ!** Hãy tham gia ngay hôm nay. Mức đóng rất linh hoạt và phù hợp với mọi người.
+
+👉 Liên hệ ngay cơ quan BHXH gần nhất hoặc đại lý thu bưu điện để được tư vấn nhé!
+
+--------------------
+#BHXH #BHYT #BaoHiemXaHoi #AnSinhXaHoi #{topic.replace(" ", "")}
+                """
+                st.success("Đã tạo nội dung mẫu (Demo Mode)!")
+                st.text_area("Nội dung:", value=mock_content, height=400)
+            else:
+                st.error(f"Lỗi: {e}")
 
 # --- TIỆN ÍCH ---
 def render_clock():
