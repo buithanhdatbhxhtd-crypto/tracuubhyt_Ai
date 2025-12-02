@@ -2,9 +2,8 @@ streamlit
 pandas
 pyxlsb
 unidecode
-google-generativeai>=0.8.0
-openpyxl
-google-cloud-firestore
-google-auth
+requests
+python-dateutil
+openai
 
 
