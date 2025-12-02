@@ -114,6 +114,58 @@ st.markdown(f"""
         margin-top: 5px;
     }}
 
+    /* Calculator Style */
+    .calc-container {{
+        background-color: #f1f1f1;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+    }}
+    .calc-display {{
+        width: 100%;
+        height: 40px;
+        background: white;
+        border: 1px solid #999;
+        margin-bottom: 10px;
+        text-align: right;
+        padding: 5px;
+        font-size: 1.2em;
+        font-family: monospace;
+        border-radius: 4px;
+        color: black;
+    }}
+    .calc-row {{
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+    }}
+    .calc-btn {{
+        width: 23%;
+        padding: 10px 0;
+        font-weight: bold;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        background-color: white;
+        color: #333;
+        box-shadow: 0 2px 2px rgba(0,0,0,0.1);
+    }}
+    .calc-btn:hover {{
+        background-color: #e0e0e0;
+    }}
+    .calc-btn.op {{
+        background-color: {BHXH_BLUE};
+        color: white;
+    }}
+    .calc-btn.clear {{
+        background-color: #d9534f;
+        color: white;
+    }}
+    .calc-btn.equal {{
+        background-color: #5cb85c;
+        color: white;
+    }}
+
     /* Card/Container style */
     .stExpander, .stDataFrame {{
         background-color: white;
@@ -198,6 +250,74 @@ def render_header():
 # --- WIDGET ZALO ---
 def render_zalo_widget():
     st.markdown(f"""<style>.z{{position:fixed;bottom:20px;right:20px;width:60px;height:60px;z-index:9999;animation:s 3s infinite}}@keyframes s{{0%,100%{{transform:rotate(0deg)}}10%,30%{{transform:rotate(10deg)}}20%,40%{{transform:rotate(-10deg)}}}}</style><a href="https://zalo.me/{ZALO_PHONE_NUMBER}" target="_blank" class="z"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png" width="100%"></a>""", unsafe_allow_html=True)
+
+# --- TÍNH NĂNG ĐỒNG HỒ (NEW) ---
+def render_clock():
+    st.sidebar.markdown(
+        """
+        <div style="background-color: #004470; color: white; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px; font-family: 'Courier New', monospace; border: 2px solid #e6f2ff; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+            <div id="digital-clock" style="font-size: 1.8em; font-weight: bold; letter-spacing: 2px;">00:00:00</div>
+            <div id="date-display" style="font-size: 0.9em; margin-top: 5px; color: #ddd;">dd/mm/yyyy</div>
+        </div>
+        <script>
+            function updateClock() {
+                const now = new Date();
+                const time = now.toLocaleTimeString('vi-VN', { hour12: false });
+                const day = String(now.getDate()).padStart(2, '0');
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const year = now.getFullYear();
+                
+                const clockDiv = document.getElementById('digital-clock');
+                const dateDiv = document.getElementById('date-display');
+                
+                if (clockDiv) clockDiv.innerHTML = time;
+                if (dateDiv) dateDiv.innerHTML = `${day}/${month}/${year}`;
+            }
+            setInterval(updateClock, 1000);
+            updateClock();
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
+
+# --- TÍNH NĂNG MÁY TÍNH (NEW) ---
+def render_calculator_widget():
+    with st.sidebar.expander("🧮 Máy tính cá nhân", expanded=False):
+        # Sử dụng HTML/JS thuần để tạo máy tính không cần reload trang
+        st.markdown("""
+            <div class="calc-container">
+                <input type="text" id="calc-display" class="calc-display" readonly>
+                <div class="calc-row">
+                    <button class="calc-btn clear" onclick="document.getElementById('calc-display').value = ''">C</button>
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '/'" style="color:red">÷</button>
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '*'" style="color:red">×</button>
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value = document.getElementById('calc-display').value.slice(0, -1)">⌫</button>
+                </div>
+                <div class="calc-row">
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '7'">7</button>
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '8'">8</button>
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '9'">9</button>
+                    <button class="calc-btn op" onclick="document.getElementById('calc-display').value += '-'">-</button>
+                </div>
+                <div class="calc-row">
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '4'">4</button>
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '5'">5</button>
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '6'">6</button>
+                    <button class="calc-btn op" onclick="document.getElementById('calc-display').value += '+'">+</button>
+                </div>
+                <div class="calc-row">
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '1'">1</button>
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '2'">2</button>
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '3'">3</button>
+                    <button class="calc-btn equal" onclick="try{document.getElementById('calc-display').value = eval(document.getElementById('calc-display').value)}catch(e){document.getElementById('calc-display').value = 'Error'}" style="height: 100%; grid-row: span 2;">=</button>
+                </div>
+                <div class="calc-row" style="margin-bottom:0">
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '0'" style="width: 48%">0</button>
+                    <button class="calc-btn" onclick="document.getElementById('calc-display').value += '.'">.</button>
+                    <button class="calc-btn" style="visibility:hidden"></button> 
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
 # --- TÍNH NĂNG THỜI TIẾT (FIX LỖI ENCODING & 401) ---
 @st.cache_data(ttl=900) # Cache 15 phút
@@ -673,8 +793,14 @@ def main():
     
     # Sidebar
     with st.sidebar:
+        # Hiển thị Đồng hồ (Mới)
+        render_clock()
+        
         # Hiển thị Widget Thời tiết ở đầu Sidebar
         render_weather_widget()
+        
+        # Hiển thị Máy tính (Mới)
+        render_calculator_widget()
         
         st.title("MENU CHỨC NĂNG")
         st.markdown("---")
