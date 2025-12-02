@@ -4,6 +4,7 @@ pyxlsb
 unidecode
 requests
 python-dateutil
-openai
+google-generativeai
+
 
 
